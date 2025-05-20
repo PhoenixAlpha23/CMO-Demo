@@ -152,7 +152,9 @@ def main():
         input_text = user_text if user_text else user_input.strip()
         if input_text:
             try:
-                assistant_reply = rag_chain.invoke(input_text)["result"]
+                response = rag_chain.invoke(input_text)
+                assistant_reply = response.get("result", "⚠️ Could not generate a response.")
+
                 st.session_state.chat_history.append({"user": input_text, "assistant": assistant_reply})
             except Exception as e:
                 st.error(f"Error generating response: {e}")
