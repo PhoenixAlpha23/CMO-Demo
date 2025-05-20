@@ -1,6 +1,7 @@
 streamlit
 protobuf==3.20.3
-sqlite3 >= 3.35.0
+pysqlite3-binary
+
 numpy
 python-dotenv
 requests
