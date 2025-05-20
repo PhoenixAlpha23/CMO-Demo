@@ -1,3 +1,9 @@
+# sql dependency for streamli compatibility
+import sys
+import pysqlite3
+
+sys.modules["sqlite3"] = pysqlite3
+
 import streamlit as st
 import tempfile
 import os
