@@ -1,6 +1,13 @@
-streamlit
 protobuf==3.20.3
 pysqlite3-binary
+
+streamlit
+chromadb==0.6.3
+langchain
+langchain-chroma
+langchain-community
+langchain-groq
+opentelemetry-exporter-otlp-proto-grpc
 
 numpy
 python-dotenv
@@ -9,9 +16,4 @@ groq
 torch
 torchaudio
 transformers
-langchain
-langchain-community
-langchain-groq
-langchain-chroma
-chromadb>= 0.4.22
 sentence-transformers
