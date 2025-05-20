@@ -6,8 +6,6 @@ numpy
 python-dotenv
 requests
 groq
-fastapi
-uvicorn
 torch
 torchaudio
 transformers
