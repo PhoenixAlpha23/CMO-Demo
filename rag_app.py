@@ -8,6 +8,10 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain.chains import RetrievalQA
 from langchain_groq import ChatGroq
 from langchain.prompts import PromptTemplate
+import sys
+import pysqlite3
+
+sys.modules["sqlite3"] = pysqlite3
 
 # Load environment variables
 load_dotenv()
