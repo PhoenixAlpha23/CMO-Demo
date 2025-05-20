@@ -3,11 +3,7 @@ import tempfile
 import os
 from dotenv import load_dotenv
 from groq import Groq
-import sys
-import pysqlite3
-from chromadb.config import Settings
 
-sys.modules["sqlite3"] = pysqlite3
 from langchain_chroma import Chroma
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain.chains import RetrievalQA
