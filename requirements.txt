@@ -6,3 +6,4 @@ langchain-groq
 sentence-transformers
 faiss-cpu
 groq
+pypdf
