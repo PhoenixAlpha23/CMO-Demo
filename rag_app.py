@@ -1,34 +1,11 @@
 import streamlit as st
-import tempfile
-import os
 from dotenv import load_dotenv
+import os
 from groq import Groq
-from langchain_chroma import Chroma
-from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain.chains import RetrievalQA
-from langchain_groq import ChatGroq
-import shutil
-# Load environment variables
+from rag_chain import build_rag_chain_from_files
+import tempfile
+
 load_dotenv()
-
-# ----------------- Initialization ----------------- #
-@st.cache_resource
-def load_rag_chain():
-    # Copy read-only DB from repo to writable /tmp
-    temp_db_path = "/tmp/chroma_db"
-    if not os.path.exists(temp_db_path):
-        shutil.copytree("chroma_db", temp_db_path)
-
-    embedding = HuggingFaceEmbeddings(model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
-    vectordb = Chroma(persist_directory=temp_db_path, embedding_function=embedding)
-    retriever = vectordb.as_retriever(search_type="similarity", search_kwargs={"k": 10})
-
-    llm = ChatGroq(
-        api_key=os.getenv("GROQ_API_KEY"),
-        model="llama-3.3-70b-versatile",
-        max_tokens=1048
-    )
-    return RetrievalQA.from_chain_type(llm=llm, retriever=retriever, return_source_documents=False)
 
 def init_session_state():
     if "chat_history" not in st.session_state:
@@ -52,33 +29,38 @@ def transcribe_audio(client, audio_bytes):
     finally:
         os.unlink(temp_path)
 
-# ----------------- Main App ----------------- #
 def main():
     st.set_page_config(page_title="RAG Assistant", layout="wide")
     st.title("🤖 RAG Assistant – English & Marathi Support")
 
-    # Validate API Key
     GROQ_API_KEY = os.getenv("GROQ_API_KEY")
     if not GROQ_API_KEY:
-        st.error("Missing GROQ_API_KEY. Please set it in your environment.")
+        st.error("Missing GROQ_API_KEY. Please set it in your .env file.")
         st.stop()
 
-    # Load components
-    whisper_client = Groq(api_key=GROQ_API_KEY)
     init_session_state()
-    rag_chain = load_rag_chain()
+
+    # Upload files
+    st.markdown("### 📄 Upload Knowledge Base")
+    uploaded_pdf = st.file_uploader("Upload English PDF", type=["pdf"])
+    uploaded_txt = st.file_uploader("Upload Marathi Text File", type=["txt"])
+
+    if not (uploaded_pdf and uploaded_txt):
+        st.warning("Please upload both PDF and TXT files to continue.")
+        st.stop()
+
+    # Load Whisper Client and RAG
+    whisper_client = Groq(api_key=GROQ_API_KEY)
+    rag_chain = build_rag_chain_from_files(uploaded_pdf, uploaded_txt, GROQ_API_KEY)
 
     # Input Section
     st.markdown("### Ask a question by typing or using audio input")
-    with st.container():
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            user_input = st.text_input("Enter your question", key="text_input", placeholder="e.g. माहिती द्या...")
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        user_input = st.text_input("Enter your question", key="text_input", placeholder="e.g. योजना माहिती द्या...")
+    with col2:
+        audio_value = st.audio_input("🎤 Record your query")
 
-        with col2:
-            audio_value = st.audio_input("🎤 Record your query")
-
-    # Handle audio
     user_text = None
     if audio_value is not None:
         try:
@@ -87,10 +69,8 @@ def main():
         except Exception as e:
             st.error(f"Transcription Error: {str(e)}")
 
-    # Handle text submission
     if st.button("🔍 Get Answer") or user_text:
         input_text = user_text if user_text else user_input.strip()
-
         if input_text:
             try:
                 assistant_reply = rag_chain.invoke(input_text)["result"]
@@ -98,10 +78,10 @@ def main():
             except Exception as e:
                 st.error(f"Error generating response: {e}")
 
-    # Display Chat History
+    # Chat history
     with st.expander("📜 Chat History", expanded=True):
         if st.session_state.chat_history:
-            for idx, entry in enumerate(st.session_state.chat_history):
+            for entry in st.session_state.chat_history:
                 st.markdown(
                     f"""<div style='background-color:#E3F2FD; padding:10px; border-radius:8px; margin-bottom:5px;'>
                     <strong>🧑 You:</strong> {entry['user']}
