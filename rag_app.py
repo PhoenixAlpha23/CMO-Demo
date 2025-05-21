@@ -47,7 +47,7 @@ def main():
     uploaded_txt = st.file_uploader("Upload Arogya Yojna booklet file", type=["txt"])
 
     if not (uploaded_pdf and uploaded_txt):
-        st.warning("Please upload both PDF and TXT files to continue.")
+        st.warning("Please upload at least one file (PDF or TXT) to continue.")
         st.stop()
 
     # Load Whisper Client and RAG
