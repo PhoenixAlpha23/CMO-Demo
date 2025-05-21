@@ -26,7 +26,10 @@ def build_rag_chain_from_files(pdf_file, txt_file, groq_api_key):
     splits = splitter.split_documents(all_docs)
 
     # Embedding & FAISS
-    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+    embeddings = HuggingFaceEmbeddings(
+        model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+        mode_kwargs={"device":"cpu"}
+    )
     vectordb = FAISS.from_documents(splits, embeddings)
 
     # LLM & RAG
