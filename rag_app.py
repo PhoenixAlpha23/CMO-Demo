@@ -22,8 +22,6 @@ def load_rag_chain():
     embedding = HuggingFaceEmbeddings(model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
     vectordb = Chroma(persist_directory=temp_db_path, embedding_function=embedding)
     retriever = vectordb.as_retriever(search_type="similarity", search_kwargs={"k": 10})
-    llm = ChatGroq(api_key=os.getenv("GROQ_API_KEY"), model="llama-3-3-70b-versatile")
-    return RetrievalQA.from_chain_type(llm=llm, retriever=retriever, return_source_documents=False)
 
     llm = ChatGroq(
         api_key=os.getenv("GROQ_API_KEY"),
