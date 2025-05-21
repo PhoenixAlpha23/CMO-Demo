@@ -46,7 +46,7 @@ def main():
     uploaded_pdf = st.file_uploader("Upload Scheme Details PDF", type=["pdf"])
     uploaded_txt = st.file_uploader("Upload Arogya Yojna booklet file", type=["txt"])
 
-    if not (uploaded_pdf and uploaded_txt):
+    if not (uploaded_pdf or uploaded_txt):
         st.warning("Please upload at least one file (PDF or TXT) to continue.")
         st.stop()
 
