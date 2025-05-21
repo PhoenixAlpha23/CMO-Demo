@@ -7,16 +7,23 @@ from langchain_chroma import Chroma
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain.chains import RetrievalQA
 from langchain_groq import ChatGroq
-
+import shutil
 # Load environment variables
 load_dotenv()
 
 # ----------------- Initialization ----------------- #
 @st.cache_resource
 def load_rag_chain():
+    # Copy read-only DB from repo to writable /tmp
+    temp_db_path = "/tmp/chroma_db"
+    if not os.path.exists(temp_db_path):
+        shutil.copytree("chroma_db", temp_db_path)
+
     embedding = HuggingFaceEmbeddings(model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
-    vectordb = Chroma(persist_directory="chroma_db", embedding_function=embedding)
+    vectordb = Chroma(persist_directory=temp_db_path, embedding_function=embedding)
     retriever = vectordb.as_retriever(search_type="similarity", search_kwargs={"k": 10})
+    llm = ChatGroq(api_key=os.getenv("GROQ_API_KEY"), model="llama-3-3-70b-versatile")
+    return RetrievalQA.from_chain_type(llm=llm, retriever=retriever, return_source_documents=False)
 
     llm = ChatGroq(
         api_key=os.getenv("GROQ_API_KEY"),
