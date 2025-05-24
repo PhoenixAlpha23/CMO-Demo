@@ -41,7 +41,7 @@ def build_rag_chain_from_files(pdf_file, txt_file, groq_api_key):
         splits = splitter.split_documents(all_docs)
 
         # Use TF-IDF Retriever - the simplest possible option that doesn't require ML models
-        retriever = TFIDFRetriever.from_documents(splits, k=40)
+        retriever = TFIDFRetriever.from_documents(splits, k=10)
 
         # LLM & RAG
         llm = ChatGroq(api_key=groq_api_key, model="llama-3.3-70b-versatile")
