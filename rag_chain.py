@@ -219,9 +219,9 @@ def query_all_schemes_optimized(rag_chain):
     if len(results) == 1:
         return results[0]
     else:
-        combined = "COMPREHENSIVE SCHEME INFORMATION:\n\n"
+        combined = "\n\n"
         for i, result in enumerate(results, 1):
-            combined += f"=== Search Result {i} ===\n{result}\n\n"
+            combined += f"\n\n"
         return combined
 
 
