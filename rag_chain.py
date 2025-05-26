@@ -10,8 +10,8 @@ from langchain_community.retrievers import TFIDFRetriever
 from langchain.prompts import PromptTemplate
 
 # Simple in-memory cache to avoid repeated API calls
-#_query_cache = {}
-#_cache_max_size = 50
+_query_cache = {}
+_cache_max_size = 50
 
 
 def get_query_hash(query_text):
