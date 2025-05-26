@@ -176,7 +176,7 @@ def main():
                 time.sleep(wait_time)
             
             try:
-                with st.spinner("🔍 Processing query (rate-limit optimized)..."):
+                with st.spinner("🔍 Processing query..."):
                     st.session_state.last_query_time = time.time()
                     
                     # Use the optimized query processor
