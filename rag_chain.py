@@ -9,7 +9,6 @@ from langchain.retrievers import EnsembleRetriever
 from langchain_community.retrievers import BM25Retriever
 from langchain.prompts import PromptTemplate
 
-
 def build_enhanced_rag_chain_from_files(pdf_file, txt_file, groq_api_key):
     """
     Enhanced RAG chain with better retrieval for comprehensive scheme listing.
