@@ -47,7 +47,7 @@ def build_rag_chain_from_files(pdf_file, txt_file, groq_api_key):
 
         return RetrievalQA.from_chain_type(
             llm=llm, 
-            chain_type="stuff",  # Simplest chain type
+            chain_type="map_reduce", 
             retriever=retriever, 
             return_source_documents=False
         )
