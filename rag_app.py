@@ -125,7 +125,7 @@ def main():
                 st.stop()
     
     # Rate-limit friendly suggestions
-    with st.expander("💡 Optimized Query Suggestions", expanded=False):
+    with st.expander("💡 Query Suggestions", expanded=False):
         st.markdown("**Rate-limit friendly queries:**")
         suggestions = get_optimized_query_suggestions()
         
