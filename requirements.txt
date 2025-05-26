@@ -8,3 +8,4 @@ faiss-cpu
 groq
 pypdf
 XlsxWriter
+rank_bm25
