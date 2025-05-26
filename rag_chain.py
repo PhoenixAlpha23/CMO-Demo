@@ -37,7 +37,7 @@ def build_rag_chain_from_files(pdf_file, txt_file, groq_api_key):
         if not all_docs:
             raise ValueError("No valid documents loaded from PDF or TXT.")
 
-        splitter = RecursiveCharacterTextSplitter(chunk_size=1500, chunk_overlap=200)
+        splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         splits = splitter.split_documents(all_docs)
 
         # Use TF-IDF Retriever - the simplest possible option that doesn't require ML models
