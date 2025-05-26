@@ -115,7 +115,7 @@ Detailed Answer:""",
         # Initialize LLM
         llm = ChatGroq(
             api_key=groq_api_key, 
-            model="llama-3.3-70b-versatile",
+            model="deepseek-r1-distill-llama-70b",
             temperature=0.2
         )
         
