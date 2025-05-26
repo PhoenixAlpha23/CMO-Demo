@@ -44,7 +44,7 @@ def build_rag_chain_from_files(pdf_file, txt_file, groq_api_key):
         retriever = TFIDFRetriever.from_documents(splits, k=20)
 
         # LLM & RAG
-        llm = ChatGroq(api_key=groq_api_key, model="llama-3.1-8b-instant")
+        llm = ChatGroq(api_key=groq_api_key, model="meta-llama/llama-guard-4-12b")
 
         return RetrievalQA.from_chain_type(
             llm=llm, 
