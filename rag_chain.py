@@ -250,10 +250,6 @@ def get_model_options():
             "name": "Llama 3.1 8B (Fast & Cheap)", 
             "description": "Best for quick queries, lower rate limits"
         },
-        "llama-3.1-70b-versatile": {
-            "name": "Llama 3.1 70B (Balanced)", 
-            "description": "Good balance of quality and speed"
-        },
         "llama-3.3-70b-versatile": {
             "name": "Llama 3.3 70B (High Quality)", 
             "description": "Best quality, but higher rate limits"
