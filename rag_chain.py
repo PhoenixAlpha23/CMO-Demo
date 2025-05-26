@@ -42,12 +42,13 @@ def build_rag_chain_from_files(pdf_file, txt_file, groq_api_key):
 
         # Use TF-IDF Retriever - the simplest possible option that doesn't require ML models
         retriever = TFIDFRetriever.from_documents(splits, k=10)
+
         # LLM & RAG
-        llm = ChatGroq(api_key=groq_api_key, model="gemma2-9b-it")
+        llm = ChatGroq(api_key=groq_api_key, model="llama-3.3-70b-versatile")
 
         return RetrievalQA.from_chain_type(
             llm=llm, 
-            chain_type="stuff", 
+            chain_type="stuff",  # Simplest chain type
             retriever=retriever, 
             return_source_documents=False
         )
