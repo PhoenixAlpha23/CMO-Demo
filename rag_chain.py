@@ -4,19 +4,26 @@ from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.chains import RetrievalQA
 from langchain_groq import ChatGroq
-from langchain_community.retrievers import TFIDFRetriever, BM25Retriever
-from langchain.retrievers import EnsembleRetriever
+from langchain_community.retrievers import TFIDFRetriever
 from langchain.prompts import PromptTemplate
+
+# Try to import BM25 and Ensemble retrievers, fallback if not available
+try:
+    from langchain_community.retrievers import BM25Retriever
+    from langchain.retrievers import EnsembleRetriever
+    ADVANCED_RETRIEVERS_AVAILABLE = True
+except ImportError:
+    ADVANCED_RETRIEVERS_AVAILABLE = False
 
 def build_rag_chain_from_files(pdf_file, txt_file, groq_api_key, enhanced_mode=True):
     """
-    Build a RAG chain for Streamlit app with enhanced retrieval capabilities.
+    Build a RAG chain for comprehensive scheme retrieval.
     
     Args:
-        pdf_file: PDF file object from Streamlit file uploader
-        txt_file: TXT file object from Streamlit file uploader  
+        pdf_file: PDF file object from Streamlit
+        txt_file: TXT file object from Streamlit  
         groq_api_key: API key for Groq
-        enhanced_mode: If True, uses enhanced retrieval for better scheme coverage
+        enhanced_mode: If True, uses enhanced retrieval for better coverage
     
     Returns:
         RAG chain object for querying documents
@@ -46,8 +53,8 @@ def build_rag_chain_from_files(pdf_file, txt_file, groq_api_key, enhanced_mode=T
         if not all_docs:
             raise ValueError("No valid documents loaded from PDF or TXT.")
 
-        if enhanced_mode:
-            # Enhanced chunking strategy for better scheme coverage
+        if enhanced_mode and ADVANCED_RETRIEVERS_AVAILABLE:
+            # Enhanced chunking strategy
             splitter = RecursiveCharacterTextSplitter(
                 chunk_size=800,
                 chunk_overlap=300,
@@ -63,55 +70,65 @@ def build_rag_chain_from_files(pdf_file, txt_file, groq_api_key, enhanced_mode=T
                 weights=[0.5, 0.5]
             )
             
-            # Custom prompt for comprehensive scheme listing
-            custom_prompt = PromptTemplate(
-                template="""You are an expert assistant for government scheme information.
-
-Based on the provided context, answer the user's question comprehensively.
-
-IMPORTANT: For queries about "all schemes" or "list of schemes":
-- List ALL schemes mentioned in the documents
-- Include both English and Marathi schemes  
-- Provide clear scheme names
-- Don't limit your response - be as complete as possible
-- If you see partial scheme information, include it
-
-Context:
-{context}
-
-Question: {question}
-
-Answer:""",
-                input_variables=["context", "question"]
+        elif enhanced_mode:
+            # Enhanced mode without ensemble (fallback)
+            splitter = RecursiveCharacterTextSplitter(
+                chunk_size=800,
+                chunk_overlap=300,
+                separators=["\n\n", "\n", ".", "!", "?", ",", " ", ""]
             )
+            splits = splitter.split_documents(all_docs)
+            retriever = TFIDFRetriever.from_documents(splits, k=40)
             
-            llm = ChatGroq(
-                api_key=groq_api_key, 
-                model="llama-3.3-70b-versatile",
-                temperature=0.2
-            )
-            
-            return RetrievalQA.from_chain_type(
-                llm=llm,
-                chain_type="stuff",
-                retriever=retriever,
-                return_source_documents=False,
-                chain_type_kwargs={"prompt": custom_prompt}
-            )
-        
         else:
-            # Original simple approach (fallback)
+            # Original simple approach
             splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
             splits = splitter.split_documents(all_docs)
-            retriever = TFIDFRetriever.from_documents(splits, k=30)  # Increased from 20
-            llm = ChatGroq(api_key=groq_api_key, model="llama-3.3-70b-versatile")
-            
-            return RetrievalQA.from_chain_type(
-                llm=llm, 
-                chain_type="stuff",
-                retriever=retriever, 
-                return_source_documents=False
+            retriever = TFIDFRetriever.from_documents(splits, k=30)
+
+        # Custom prompt for comprehensive results
+        if enhanced_mode:
+            custom_prompt = PromptTemplate(
+                template="""You are an expert assistant for government scheme information with knowledge of both English and Marathi schemes.
+
+Based on the provided context, answer the user's question comprehensively and accurately.
+
+IMPORTANT GUIDELINES:
+- For queries about "all schemes", "सर्व योजना", or "list schemes": Provide ALL schemes mentioned in the documents
+- Include both English and Marathi scheme names
+- Provide clear, organized information
+- If you find partial scheme information, include it
+- Be thorough and don't limit your response
+- Maintain accuracy and cite specific details when available
+
+Context from documents:
+{context}
+
+User Question: {question}
+
+Detailed Answer:""",
+                input_variables=["context", "question"]
             )
+        else:
+            custom_prompt = None
+
+        # Initialize LLM
+        llm = ChatGroq(
+            api_key=groq_api_key, 
+            model="llama-3.3-70b-versatile",
+            temperature=0.2
+        )
+        
+        # Build RAG chain
+        chain_kwargs = {"prompt": custom_prompt} if custom_prompt else {}
+        
+        return RetrievalQA.from_chain_type(
+            llm=llm,
+            chain_type="stuff",
+            retriever=retriever,
+            return_source_documents=False,
+            chain_type_kwargs=chain_kwargs
+        )
             
     except Exception as e:
         raise ValueError(f"Failed to build RAG chain: {str(e)}")
@@ -122,79 +139,6 @@ Answer:""",
         if txt_path and os.path.exists(txt_path):
             os.unlink(txt_path)
 
-
-def query_all_schemes(rag_chain, language_hint="both"):
-    """
-    Helper function to get comprehensive scheme list using multiple query strategies.
-    
-    Args:
-        rag_chain: The RAG chain object
-        language_hint: "english", "marathi", or "both"
-    
-    Returns:
-        Comprehensive list of schemes
-    """
-    # Multiple targeted queries for better coverage
-    base_queries = [
-        "list all government schemes",
-        "complete list of schemes and programs", 
-        "सर्व सरकारी योजना नावे",  # All government scheme names in Marathi
-        "scheme names with eligibility criteria",
-        "welfare schemes and benefits programs"
-    ]
-    
-    if language_hint == "english":
-        queries = [q for q in base_queries if not any(ord(char) > 127 for char in q)]
-    elif language_hint == "marathi":
-        queries = [q for q in base_queries if any(ord(char) > 127 for char in q)] + ["योजना", "अनुदान"]
-    else:
-        queries = base_queries
-    
-    results = []
-    for query in queries:
-        try:
-            result = rag_chain.invoke({"query": query})
-            if result and 'result' in result:
-                results.append(result['result'])
-        except Exception as e:
-            continue
-    
-    # Combine and deduplicate results
-    if results:
-        combined = "\n\n=== COMPREHENSIVE SCHEME LIST ===\n\n" + "\n\n".join(results)
-        
-        # Final synthesis
-        synthesis_query = f"""
-        Based on all the information below, provide a final consolidated list of ALL unique government schemes mentioned. 
-        Remove duplicates and organize clearly:
-        
-        {combined}
-        
-        Provide the complete consolidated list:
-        """
-        
-        try:
-            final_result = rag_chain.invoke({"query": synthesis_query})
-            return final_result.get('result', combined)
-        except:
-            return combined
-    
-    return "No schemes found. Please check your documents."
-
-
-# Streamlit app integration helpers
-def get_optimized_query_suggestions():
-    """
-    Returns suggested queries optimized for comprehensive scheme retrieval.
-    """
-    return [
-        "List all government schemes available",
-        "Complete list of schemes in both languages", 
-        "सर्व सरकारी योजना नावे (All government schemes)",
-        "Show me all 72 schemes from the documents",
-        "Welfare schemes and eligibility criteria",
-        "Financial assistance programs list"
-    ]
 
 def process_scheme_query(rag_chain, user_query):
     """
@@ -210,13 +154,13 @@ def process_scheme_query(rag_chain, user_query):
     # Check if user is asking for comprehensive listing
     comprehensive_keywords = [
         "all schemes", "list schemes", "complete list", "सर्व योजना", 
-        "total schemes", "how many schemes", "scheme names"
+        "total schemes", "how many schemes", "scheme names", "सर्व", "यादी"
     ]
     
     is_comprehensive_query = any(keyword in user_query.lower() for keyword in comprehensive_keywords)
     
     if is_comprehensive_query:
-        # Use the specialized comprehensive search
+        # Use multiple query strategy for comprehensive results
         return query_all_schemes(rag_chain)
     else:
         # Regular query processing
@@ -225,3 +169,90 @@ def process_scheme_query(rag_chain, user_query):
             return result.get('result', 'No results found.')
         except Exception as e:
             return f"Error processing query: {str(e)}"
+
+
+def query_all_schemes(rag_chain):
+    """
+    Comprehensive scheme search using multiple query strategies.
+    
+    Args:
+        rag_chain: The RAG chain object
+    
+    Returns:
+        Comprehensive list of all schemes
+    """
+    # Multiple targeted queries for maximum coverage
+    queries = [
+        "list all government schemes available",
+        "complete list of schemes and programs", 
+        "सर्व सरकारी योजना नावे आणि तपशील",  # All govt schemes names and details
+        "scheme names with eligibility criteria",
+        "welfare schemes and benefits programs",
+        "योजना यादी आणि फायदे",  # Scheme list and benefits
+        "all 72 schemes mentioned in documents"
+    ]
+    
+    results = []
+    unique_content = set()
+    
+    for query in queries:
+        try:
+            result = rag_chain.invoke({"query": query})
+            content = result.get('result', '')
+            
+            # Add only unique content
+            if content and content not in unique_content and len(content) > 50:
+                results.append(content)
+                unique_content.add(content)
+        except Exception as e:
+            continue
+    
+    if not results:
+        return "No schemes found. Please check if your documents contain scheme information."
+    
+    # Combine results
+    combined_results = "\n\n--- Additional Search Results ---\n\n".join(results)
+    
+    # Final synthesis for comprehensive output
+    synthesis_query = f"""
+    Based on all the search results below, provide a comprehensive, organized list of ALL government schemes mentioned. 
+    Remove any duplicates and present the information clearly:
+    
+    SEARCH RESULTS:
+    {combined_results}
+    
+    Please provide:
+    1. Complete list of all unique schemes
+    2. Organize by categories if possible
+    3. Include both English and Marathi scheme names
+    4. Mention total count if possible
+    
+    COMPREHENSIVE SCHEME LIST:
+    """
+    
+    try:
+        final_result = rag_chain.invoke({"query": synthesis_query})
+        final_content = final_result.get('result', '')
+        
+        if final_content and len(final_content) > len(max(results, key=len)):
+            return final_content
+        else:
+            # Fallback to combined results if synthesis didn't improve
+            return f"COMPREHENSIVE SCHEME INFORMATION:\n\n{combined_results}"
+            
+    except Exception:
+        return f"COMPREHENSIVE SCHEME INFORMATION:\n\n{combined_results}"
+
+
+def get_optimized_query_suggestions():
+    """
+    Returns suggested queries optimized for comprehensive scheme retrieval.
+    """
+    return [
+        "List all government schemes available",
+        "सर्व सरकारी योजना दाखवा (Show all government schemes)", 
+        "Complete list of 72 schemes from documents",
+        "Welfare schemes and eligibility criteria",
+        "Financial assistance programs details",
+        "आरोग्य योजना माहिती (Health scheme information)"
+    ]
