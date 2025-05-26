@@ -203,9 +203,8 @@ def main():
                     assistant_reply = assistant_reply.replace("[Cached] ", "")
                 
                 st.markdown(
-                    f"""<div style='background-color:#E8F5E9; padding:15px; border-radius:8px; margin-bottom:15px; border-left: 4px solid #4CAF50;'>
-                    <strong>🤖 Assistant:</strong><br><br>{assistant_reply}
-                    </div>""", 
+                    f"<div style='background-color:#E8F5E9; padding:15px; border-radius:8px; margin-bottom:15px; border-left: 4px solid #4CAF50;'>"
+                    f"<b>🤖 Assistant:<br><br>{assistant_reply}</div>", 
                     unsafe_allow_html=True
                 )
                 
