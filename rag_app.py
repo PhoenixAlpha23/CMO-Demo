@@ -2,10 +2,16 @@ import streamlit as st
 from dotenv import load_dotenv
 import os
 from groq import Groq
-from rag_chain import build_rag_chain_from_files, process_scheme_query, get_optimized_query_suggestions
+from rag_chain import (
+    build_rag_chain_with_model_choice, 
+    process_scheme_query_with_retry, 
+    get_optimized_query_suggestions,
+    get_model_options
+)
 import tempfile
 import pandas as pd
 import io
+import time
 load_dotenv()
 
 def init_session_state():
@@ -13,6 +19,10 @@ def init_session_state():
         st.session_state.chat_history = []
     if "suggested_query" not in st.session_state:
         st.session_state.suggested_query = ""
+    if "last_query_time" not in st.session_state:
+        st.session_state.last_query_time = 0
+    if "rag_chain" not in st.session_state:
+        st.session_state.rag_chain = None
 
 def transcribe_audio(client, audio_bytes):
     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_audio:
@@ -31,6 +41,17 @@ def transcribe_audio(client, audio_bytes):
         return transcription.text
     finally:
         os.unlink(temp_path)
+
+def check_rate_limit_delay():
+    """Check if we need to wait before making another query"""
+    current_time = time.time()
+    time_since_last = current_time - st.session_state.last_query_time
+    min_delay = 2  # Minimum 2 seconds between queries
+    
+    if time_since_last < min_delay:
+        wait_time = min_delay - time_since_last
+        return wait_time
+    return 0
 
 def main():
     st.set_page_config(page_title="CMRF RAG Assistant", layout="wide")
@@ -52,23 +73,60 @@ def main():
         st.warning("Please upload at least one file (PDF or TXT) to continue.")
         st.stop()
 
-    # Load Whisper Client and Enhanced RAG
+    # Model selection for rate limit optimization
+    st.sidebar.markdown("### ⚙️ Settings")
+    model_options = get_model_options()
+    
+    selected_model = st.sidebar.selectbox(
+        "Choose Model (for rate limit management):",
+        options=list(model_options.keys()),
+        format_func=lambda x: model_options[x]["name"],
+        index=0  # Default to fastest model
+    )
+    
+    st.sidebar.markdown(f"**Selected:** {model_options[selected_model]['description']}")
+    
+    # Enhanced mode toggle
+    enhanced_mode = st.sidebar.checkbox(
+        "Enhanced Mode", 
+        value=True, 
+        help="Better scheme coverage but uses more tokens"
+    )
+    
+    # Rate limit info
+    st.sidebar.markdown("### 📊 Rate Limit Info")
+    queries_count = len(st.session_state.chat_history)
+    st.sidebar.metric("Queries Made", queries_count)
+    
+    if queries_count > 10:
+        st.sidebar.warning("⚠️ High query count. Consider shorter breaks between queries.")
+
+    # Load Whisper Client and RAG (with caching)
     whisper_client = Groq(api_key=GROQ_API_KEY)
     
-    # Build enhanced RAG chain
-    with st.spinner("🔧 Building enhanced RAG system for comprehensive scheme search..."):
-        rag_chain = build_rag_chain_from_files(
-            uploaded_pdf, 
-            uploaded_txt, 
-            GROQ_API_KEY, 
-            enhanced_mode=True  # Enable enhanced mode for better scheme coverage
-        )
+    # Build RAG chain only once or when model changes
+    current_model_key = f"{selected_model}_{enhanced_mode}"
+    if (st.session_state.rag_chain is None or 
+        getattr(st.session_state, 'current_model_key', '') != current_model_key):
+        
+        with st.spinner("🔧 Building optimized RAG system..."):
+            try:
+                st.session_state.rag_chain = build_rag_chain_with_model_choice(
+                    uploaded_pdf, 
+                    uploaded_txt, 
+                    GROQ_API_KEY,
+                    model_choice=selected_model,
+                    enhanced_mode=enhanced_mode
+                )
+                st.session_state.current_model_key = current_model_key
+                st.success("✅ RAG system ready!")
+            except Exception as e:
+                st.error(f"Failed to build RAG system: {e}")
+                st.stop()
     
-    st.success("✅ RAG system ready! Enhanced for comprehensive scheme retrieval.")
-    
-    # Add suggested queries section
-    with st.expander("💡 Quick Query Suggestions (Click to use)", expanded=False):
-        st.markdown("**For comprehensive scheme information, try these optimized queries:**")
+    # Rate-limit friendly suggestions
+    with st.expander("💡 Optimized Query Suggestions", expanded=False):
+        st.markdown("**Rate-limit friendly queries:**")
         suggestions = get_optimized_query_suggestions()
         
         col1, col2 = st.columns(2)
@@ -84,21 +142,20 @@ def main():
     col1, col2 = st.columns([3, 1])
     
     with col1:
-        # Use suggested query if available
         default_value = st.session_state.suggested_query if st.session_state.suggested_query else ""
         user_input = st.text_input(
             "Enter your question", 
             key="text_input", 
-            placeholder="e.g. सर्व योजना दाखवा / List all schemes / योजना माहिती द्या...",
+            placeholder="e.g. मुख्य योजना दाखवा / Show main schemes...",
             value=default_value
         )
-        # Clear suggested query after use
         if st.session_state.suggested_query:
             st.session_state.suggested_query = ""
     
     with col2:
         audio_value = st.audio_input("🎤 Record your query")
 
+    # Audio transcription
     user_text = None
     if audio_value is not None:
         try:
@@ -108,23 +165,43 @@ def main():
         except Exception as e:
             st.error(f"Transcription Error: {str(e)}")
 
-    # Enhanced query processing
+    # Query processing with rate limit handling
     if st.button("🔍 Get Answer", type="primary") or user_text:
         input_text = user_text if user_text else user_input.strip()
         if input_text:
+            # Check rate limit
+            wait_time = check_rate_limit_delay()
+            if wait_time > 0:
+                st.warning(f"⏳ Please wait {wait_time:.1f} seconds to avoid rate limits...")
+                time.sleep(wait_time)
+            
             try:
-                with st.spinner("🔍 Searching through all schemes..."):
-                    # Use enhanced query processing
-                    assistant_reply = process_scheme_query(rag_chain, input_text)
+                with st.spinner("🔍 Processing query (rate-limit optimized)..."):
+                    st.session_state.last_query_time = time.time()
+                    
+                    # Use the optimized query processor
+                    assistant_reply = process_scheme_query_with_retry(
+                        st.session_state.rag_chain, 
+                        input_text
+                    )
                 
                 # Add to chat history
                 st.session_state.chat_history.insert(0, {
                     "user": input_text, 
-                    "assistant": assistant_reply
+                    "assistant": assistant_reply,
+                    "model": selected_model,
+                    "timestamp": time.strftime("%H:%M:%S")
                 })
                 
-                # Show immediate result
+                # Show result
                 st.markdown("### 📋 Answer:")
+                
+                # Show if result was cached
+                is_cached = assistant_reply.startswith("[Cached]")
+                if is_cached:
+                    st.info("🚀 This result was retrieved from cache (faster response)")
+                    assistant_reply = assistant_reply.replace("[Cached] ", "")
+                
                 st.markdown(
                     f"""<div style='background-color:#E8F5E9; padding:15px; border-radius:8px; margin-bottom:15px; border-left: 4px solid #4CAF50;'>
                     <strong>🤖 Assistant:</strong><br><br>{assistant_reply}
@@ -133,18 +210,24 @@ def main():
                 )
                 
             except Exception as e:
-                st.error(f"Error generating response: {e}")
+                st.error(f"Error: {e}")
+                if "rate_limit" in str(e).lower():
+                    st.info("💡 **Tips to avoid rate limits:**\n- Wait 10-15 seconds between queries\n- Use simpler, more specific questions\n- Try the faster model (8B) for basic queries")
         else:
             st.warning("Please enter a question or record audio.")
 
-    # Enhanced Chat History with better formatting
+    # Enhanced Chat History
     with st.expander("📜 Chat History", expanded=len(st.session_state.chat_history) > 0):
         if st.session_state.chat_history:
             st.markdown(f"**Total conversations: {len(st.session_state.chat_history)}**")
             
             for i, entry in enumerate(st.session_state.chat_history):
                 st.markdown(f"---")
-                st.markdown(f"**Conversation #{len(st.session_state.chat_history) - i}**")
+                
+                # Show metadata
+                model_used = entry.get('model', 'Unknown')
+                timestamp = entry.get('timestamp', 'Unknown time')
+                st.caption(f"#{len(st.session_state.chat_history) - i} | Model: {model_used} | Time: {timestamp}")
                 
                 st.markdown(
                     f"""<div style='background-color:#E3F2FD; padding:10px; border-radius:8px; margin-bottom:5px; border-left: 4px solid #2196F3;'>
@@ -160,13 +243,14 @@ def main():
                     unsafe_allow_html=True
                 )
             
-            # Enhanced download options
+            # Download and management options
             col1, col2, col3 = st.columns(3)
             
             with col1:
-                # Excel download
+                # Excel download with metadata
                 df = pd.DataFrame(st.session_state.chat_history)
-                df.columns = ['Query', 'Response']
+                df = df[['user', 'assistant', 'model', 'timestamp']]
+                df.columns = ['Query', 'Response', 'Model Used', 'Time']
                 df.index = range(1, len(df) + 1)
                 
                 buffer = io.BytesIO()
@@ -176,44 +260,39 @@ def main():
                 st.download_button(
                     label="📥 Download Excel",
                     data=buffer.getvalue(),
-                    file_name="cmrf_chat_history.xlsx",
+                    file_name=f"cmrf_chat_history_{time.strftime('%Y%m%d_%H%M')}.xlsx",
                     mime="application/vnd.ms-excel",
                     use_container_width=True
                 )
             
             with col2:
-                # CSV download
-                csv_buffer = io.StringIO()
-                df.to_csv(csv_buffer, index=True)
-                
-                st.download_button(
-                    label="📄 Download CSV",
-                    data=csv_buffer.getvalue(),
-                    file_name="cmrf_chat_history.csv",
-                    mime="text/csv",
-                    use_container_width=True
-                )
-            
-            with col3:
-                # Clear history button
                 if st.button("🗑️ Clear History", use_container_width=True):
                     st.session_state.chat_history = []
+                    st.rerun()
+            
+            with col3:
+                if st.button("🔄 Reset RAG", use_container_width=True, help="Reset RAG system and cache"):
+                    st.session_state.rag_chain = None
                     st.rerun()
                     
         else:
             st.info("No chat history yet. Ask your first question!")
             st.markdown("""
-            **💡 Tips for better results:**
-            - Use the suggested queries above for comprehensive scheme lists
-            - Ask specific questions about eligibility, benefits, or application process
-            - You can ask in English, Marathi, or mix both languages
-            - Try queries like "सर्व योजना दाखवा" or "List all 72 schemes"
+            **💡 Rate-limit friendly tips:**
+            - Start with specific questions rather than "list all schemes"
+            - Wait 2-3 seconds between queries
+            - Use the 8B model for simple questions
+            - Cached results (marked with 🚀) don't count against rate limits
             """)
 
-    # Add footer with usage statistics
-    if st.session_state.chat_history:
-        st.markdown("---")
-        st.markdown(f"**📊 Session Stats:** {len(st.session_state.chat_history)} questions asked")
+    # Footer with tips
+    st.markdown("---")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.session_state.chat_history:
+            st.markdown(f"📊 **Session:** {len(st.session_state.chat_history)} queries | Model: {selected_model}")
+    with col2:
+        st.markdown("💡 **Tip:** Use specific questions to avoid rate limits")
 
 if __name__ == "__main__":
     main()
