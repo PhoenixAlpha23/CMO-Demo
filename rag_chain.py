@@ -251,15 +251,14 @@ def process_scheme_query_with_retry(rag_chain, user_query, max_retries=3, debug=
     
     return "Unable to process query after multiple attempts. Please try again."
 
-
-def query_all_schemes_optimized(rag_chain, debug=False):
+def query_all_schemes_optimized(rag_chain):
     """
-    Optimized comprehensive scheme search.
+    Fixed version - this was causing blank responses!
     """
     priority_queries = [
-        "list government schemes",
-        "government welfare programs",
-        "सरकारी योजना नावे"
+        "government schemes list names",
+        "सरकारी योजना नावे",  # Government scheme names in Marathi
+        "welfare programs benefits"
     ]
     
     results = []
@@ -267,33 +266,34 @@ def query_all_schemes_optimized(rag_chain, debug=False):
     
     for i, query in enumerate(priority_queries):
         try:
+            # Add delay between queries to respect rate limits
             if i > 0:
                 time.sleep(1)
             
-            response = rag_chain.invoke({"query": query})
-            content = response.get('result', '') if isinstance(response, dict) else str(response)
+            result = rag_chain.invoke({"query": query})
+            content = result.get('result', '')
             
-            if content and content.strip() and len(content.strip()) > 30:
-                content_hash = hashlib.md5(content.encode()).hexdigest()
-                if content_hash not in unique_content:
-                    results.append(content)
-                    unique_content.add(content_hash)
-                    
+            if content and content not in unique_content and len(content) > 30:
+                results.append(content)
+                unique_content.add(content)
+                
         except Exception as e:
-            if debug:
-                print(f"Query '{query}' failed: {str(e)}")
             if "rate_limit" in str(e):
-                time.sleep(3)
+                time.sleep(3)  # Wait longer on rate limit
                 break
             continue
     
     if not results:
-        return "Unable to retrieve comprehensive scheme list. Try asking about specific schemes."
+        return "Unable to retrieve comprehensive scheme list due to rate limits. Try asking about specific schemes."
     
-    return "\n\n".join(results)
+    if len(results) == 1:
+        return results[0]
+    else:
+        combined = "Here are the government schemes found:\n\n"
+        for i, result in enumerate(results, 1):
+            combined += f"=== Query {i} Results ===\n{result}\n\n"
+        return combined
 
-
-# Keep other functions unchanged
 def get_optimized_query_suggestions():
     return [
         "List main government schemes",
