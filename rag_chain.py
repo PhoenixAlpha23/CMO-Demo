@@ -97,8 +97,8 @@ Bullet point (e.g., • Skill India Mission)
 
 Dash point (e.g., - Startup India Initiative)
 
-Use regex patterns to ensure accurate extraction.
-
+Use regex patterns to ensure accurate extraction, but remove unrequired punctuation marks and present a clean output.
+Instructions: Always reply in the input language(eg. Marathi,English or Hindi).
 Context: {context}
 
 Question: {question}
