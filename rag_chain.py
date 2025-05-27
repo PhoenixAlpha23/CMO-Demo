@@ -191,37 +191,30 @@ def process_scheme_query_with_retry(rag_chain, user_query, max_retries=3):
 import re
 import time
 
-def extract_schemes_from_text(text):
-    """Extract scheme names from text using pattern matching"""
-    schemes = set()
-    
-    scheme_patterns = [
-        r'^[A-Z][A-Za-z\s\d\-\(\)]+(?:Scheme|Yojana|योजना|Program|Programme|Mission|Campaign).*$',
-        r'^\d+\.\s*([A-Z][A-Za-z\s\d\-\(\)]+)$',
-        r'^•\s*([A-Z][A-Za-z\s\d\-\(\)]+)$',
-        r'^-\s*([A-Z][A-Za-z\s\d\-\(\)]+)$',
+import re
+
+def extract_all_scheme_names(text):
+    # Normalize text
+    text = re.sub(r'\s+', ' ', text)  # collapse all whitespace
+    text = text.replace('\n', ' ')    # remove newline breaks
+
+    # Define scheme patterns
+    patterns = [
+        r'\b(?:[A-Z][a-z]+(?: [A-Z][a-z]+)* )?(?:scheme|yojana|Yojana|Scheme|अभियान|योजना)\b',  # General English or Marathi scheme mentions
+        r'\b(?:[A-Z][a-z]+ ){0,5}Programme\b',  # National Programme, e.g., National Programme for Health Care...
+        r'\b(?:Pradhan Mantri|प्रधानमंत्री|माता|जननी|महात्मा).*?(?:Scheme|Yojana|योजना)\b',  # Named schemes
+        r'[A-Z]{2,10}\s*(?:Scheme|Yojana|Programme)',  # Acronyms like JSY, CGHS, NHM
+        r'\b[A-Z][a-z]+(?:-[A-Z][a-z]+)*\s+Abhiyan\b',  # Abhiyan-type names (e.g., Suraksha Abhiyan)
     ]
-    
-    lines = text.split('\n')
-    for line in lines:
-        line = line.strip()
-        if 10 < len(line) < 150:
-            for pattern in scheme_patterns:
-                if re.match(pattern, line, re.MULTILINE):
-                    clean_name = re.sub(r'^\d+\.\s*|^•\s*|^-\s*', '', line).strip()
-                    if len(clean_name) > 5:
-                        schemes.add(clean_name)
 
-    keywords = ['scheme', 'yojana', 'योजना', 'program', 'programme', 'mission', 'campaign']
-    words = text.split()
-    for i, word in enumerate(words):
-        if any(kw in word.lower() for kw in keywords):
-            context = ' '.join(words[max(0, i-3):min(len(words), i+3)])
-            if 10 < len(context) < 100:
-                schemes.add(context.strip())
-    
-    return list(schemes)
+    # Combine and apply all patterns
+    combined_pattern = '|'.join(patterns)
+    matches = re.findall(combined_pattern, text)
 
+    # Clean and deduplicate
+    cleaned = list(set([match.strip().rstrip(':.,;') for match in matches if len(match.strip()) > 4]))
+
+    return sorted(cleaned)
 
 def query_all_schemes_optimized(rag_chain):
     """
