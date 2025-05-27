@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 import os
 from groq import Groq
 from rag_chain import (
-    build_rag_chain_with_model_choice, 
+    build_rag_chain_from_files, 
     process_scheme_query_with_retry, 
     get_optimized_query_suggestions,
     get_model_options
@@ -23,6 +23,8 @@ def init_session_state():
         st.session_state.last_query_time = 0
     if "rag_chain" not in st.session_state:
         st.session_state.rag_chain = None
+    if "debug_mode" not in st.session_state:
+        st.session_state.debug_mode = False
 
 def transcribe_audio(client, audio_bytes):
     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_audio:
@@ -73,18 +75,8 @@ def main():
         st.warning("Please upload at least one file (PDF or TXT) to continue.")
         st.stop()
 
-    # Model selection for rate limit optimization
+    # Sidebar Settings
     st.sidebar.markdown("### ⚙️ Settings")
-    model_options = get_model_options()
-    
-    selected_model = st.sidebar.selectbox(
-        "Choose Model (for rate limit management):",
-        options=list(model_options.keys()),
-        format_func=lambda x: model_options[x]["name"],
-        index=0  # Default to fastest model
-    )
-    
-    st.sidebar.markdown(f"**Selected:** {model_options[selected_model]['description']}")
     
     # Enhanced mode toggle
     enhanced_mode = st.sidebar.checkbox(
@@ -93,6 +85,14 @@ def main():
         help="Better scheme coverage but uses more tokens"
     )
     
+    # Debug mode toggle
+    debug_mode = st.sidebar.checkbox(
+        "Debug Mode", 
+        value=False, 
+        help="Show detailed processing information"
+    )
+    st.session_state.debug_mode = debug_mode
+    
     # Rate limit info
     st.sidebar.markdown("### 📊 Rate Limit Info")
     queries_count = len(st.session_state.chat_history)
@@ -100,28 +100,44 @@ def main():
     
     if queries_count > 10:
         st.sidebar.warning("⚠️ High query count. Consider shorter breaks between queries.")
+    
+    # Model information (for display only since we're using the fixed model from rag_chain)
+    st.sidebar.markdown("### 🤖 Model Info")
+    st.sidebar.info("Using: Llama 3.1 8B Instant (optimized for rate limits)")
 
     # Load Whisper Client and RAG (with caching)
     whisper_client = Groq(api_key=GROQ_API_KEY)
     
-    # Build RAG chain only once or when model changes
-    current_model_key = f"{selected_model}_{enhanced_mode}"
+    # Build RAG chain only once or when settings change
+    current_settings_key = f"{enhanced_mode}_{debug_mode}"
     if (st.session_state.rag_chain is None or 
-        getattr(st.session_state, 'current_model_key', '') != current_model_key):
+        getattr(st.session_state, 'current_settings_key', '') != current_settings_key):
         
         with st.spinner("🔧 Building optimized RAG system..."):
             try:
-                st.session_state.rag_chain = build_rag_chain_with_model_choice(
+                # Reset file pointers to beginning
+                if uploaded_pdf:
+                    uploaded_pdf.seek(0)
+                if uploaded_txt:
+                    uploaded_txt.seek(0)
+                
+                st.session_state.rag_chain = build_rag_chain_from_files(
                     uploaded_pdf, 
                     uploaded_txt, 
                     GROQ_API_KEY,
-                    model_choice=selected_model,
-                    enhanced_mode=enhanced_mode
+                    enhanced_mode=enhanced_mode,
+                    debug=debug_mode
                 )
-                st.session_state.current_model_key = current_model_key
+                st.session_state.current_settings_key = current_settings_key
                 st.success("✅ RAG system ready!")
+                
+                if debug_mode:
+                    st.info("🔧 Debug mode enabled - detailed processing info will be shown")
+                    
             except Exception as e:
                 st.error(f"Failed to build RAG system: {e}")
+                if debug_mode:
+                    st.exception(e)
                 st.stop()
     
     # Rate-limit friendly suggestions
@@ -164,6 +180,8 @@ def main():
             st.success(f"🎧 Transcribed: {user_text}")
         except Exception as e:
             st.error(f"Transcription Error: {str(e)}")
+            if debug_mode:
+                st.exception(e)
 
     # Query processing with rate limit handling
     if st.button("🔍 Get Answer", type="primary") or user_text:
@@ -179,18 +197,21 @@ def main():
                 with st.spinner("🔍 Processing query..."):
                     st.session_state.last_query_time = time.time()
                     
-                    # Use the optimized query processor
+                    # Use the optimized query processor with debug option
                     assistant_reply = process_scheme_query_with_retry(
                         st.session_state.rag_chain, 
-                        input_text
+                        input_text,
+                        max_retries=3,
+                        debug=debug_mode
                     )
                 
                 # Add to chat history
                 st.session_state.chat_history.insert(0, {
                     "user": input_text, 
                     "assistant": assistant_reply,
-                    "model": selected_model,
-                    "timestamp": time.strftime("%H:%M:%S")
+                    "model": "llama-3.1-8b-instant",
+                    "timestamp": time.strftime("%H:%M:%S"),
+                    "enhanced_mode": enhanced_mode
                 })
                 
                 # Show result
@@ -204,14 +225,26 @@ def main():
                 
                 st.markdown(
                     f"<div style='background-color:#E8F5E9; padding:15px; border-radius:8px; margin-bottom:15px; border-left: 4px solid #4CAF50;'>"
-                    f"<b>🤖 Assistant:<br><br>{assistant_reply}</div>", 
+                    f"<b>🤖 Assistant:</b><br><br>{assistant_reply}</div>", 
                     unsafe_allow_html=True
                 )
                 
+                if debug_mode:
+                    st.markdown("### 🔧 Debug Information:")
+                    st.json({
+                        "query_length": len(input_text),
+                        "response_length": len(assistant_reply),
+                        "was_cached": is_cached,
+                        "enhanced_mode": enhanced_mode,
+                        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+                    })
+                
             except Exception as e:
                 st.error(f"Error: {e}")
+                if debug_mode:
+                    st.exception(e)
                 if "rate_limit" in str(e).lower():
-                    st.info("💡 **Tips to avoid rate limits:**\n- Wait 10-15 seconds between queries\n- Use simpler, more specific questions\n- Try the faster model (8B) for basic queries")
+                    st.info("💡 **Tips to avoid rate limits:**\n- Wait 10-15 seconds between queries\n- Use simpler, more specific questions\n- Try asking about specific schemes instead of 'all schemes'")
         else:
             st.warning("Please enter a question or record audio.")
 
@@ -226,7 +259,10 @@ def main():
                 # Show metadata
                 model_used = entry.get('model', 'Unknown')
                 timestamp = entry.get('timestamp', 'Unknown time')
-                st.caption(f"#{len(st.session_state.chat_history) - i} | Model: {model_used} | Time: {timestamp}")
+                enhanced = entry.get('enhanced_mode', False)
+                mode_text = "Enhanced" if enhanced else "Standard"
+                
+                st.caption(f"#{len(st.session_state.chat_history) - i} | Model: {model_used} | Mode: {mode_text} | Time: {timestamp}")
                 
                 st.markdown(
                     f"""<div style='background-color:#E3F2FD; padding:10px; border-radius:8px; margin-bottom:5px; border-left: 4px solid #2196F3;'>
@@ -248,8 +284,8 @@ def main():
             with col1:
                 # Excel download with metadata
                 df = pd.DataFrame(st.session_state.chat_history)
-                df = df[['user', 'assistant', 'model', 'timestamp']]
-                df.columns = ['Query', 'Response', 'Model Used', 'Time']
+                df = df[['user', 'assistant', 'model', 'enhanced_mode', 'timestamp']]
+                df.columns = ['Query', 'Response', 'Model Used', 'Enhanced Mode', 'Time']
                 df.index = range(1, len(df) + 1)
                 
                 buffer = io.BytesIO()
@@ -272,6 +308,10 @@ def main():
             with col3:
                 if st.button("🔄 Reset RAG", use_container_width=True, help="Reset RAG system and cache"):
                     st.session_state.rag_chain = None
+                    # Clear the internal cache from rag_chain module
+                    from rag_chain import _query_cache
+                    _query_cache.clear()
+                    st.success("RAG system and cache cleared!")
                     st.rerun()
                     
         else:
@@ -280,18 +320,31 @@ def main():
             **💡 Rate-limit friendly tips:**
             - Start with specific questions rather than "list all schemes"
             - Wait 2-3 seconds between queries
-            - Use the 8B model for simple questions
             - Cached results (marked with 🚀) don't count against rate limits
+            - Use Enhanced Mode for better scheme coverage
             """)
 
-    # Footer with tips
+    # Footer with tips and system info
     st.markdown("---")
     col1, col2 = st.columns(2)
     with col1:
         if st.session_state.chat_history:
-            st.markdown(f"📊 **Session:** {len(st.session_state.chat_history)} queries | Model: {selected_model}")
+            mode_text = "Enhanced" if enhanced_mode else "Standard"
+            st.markdown(f"📊 **Session:** {len(st.session_state.chat_history)} queries | Mode: {mode_text}")
     with col2:
         st.markdown("💡 **Tip:** Use specific questions to avoid rate limits")
+    
+    # System status
+    if debug_mode:
+        st.markdown("### 🔧 System Status")
+        cache_size = len(getattr(__import__('rag_chain'), '_query_cache', {}))
+        st.metric("Cache Size", cache_size)
+        
+        if st.button("Clear Cache Only"):
+            from rag_chain import _query_cache
+            _query_cache.clear()
+            st.success("Cache cleared!")
+            st.rerun()
 
 if __name__ == "__main__":
     main()
