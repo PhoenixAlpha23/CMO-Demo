@@ -81,7 +81,7 @@ def build_rag_chain_from_files(pdf_file, txt_file, groq_api_key, enhanced_mode=T
             api_key=groq_api_key, 
             model="llama-3.1-8b-instant",  # Faster, cheaper model
             temperature=0.1,
-            max_tokens=2000  # Limit output tokens
+            max_tokens=2048  # Limit output tokens
         )
         
         # Optimized prompt to reduce token usage
