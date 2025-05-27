@@ -87,7 +87,7 @@ def build_rag_chain_from_files(pdf_file, txt_file, groq_api_key, enhanced_mode=T
         # Optimized prompt to reduce token usage
         if enhanced_mode:
             custom_prompt = PromptTemplate(
-                template="""Based on the context, answer concisely but comprehensively.
+                template="""Based on the context, answer concisely, to the point and comprehensively.do not mention anything irrelevant(eg. don't mention 'based upon given context')
 
 For list of schemes:Extract all schemes or program names from the in the documents, both English and Marathi names. A valid name typically starts with a capital letter and includes terms like Scheme, Yojana, Program, Programme, or योजना. Also match if presented as:
 
