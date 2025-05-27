@@ -8,7 +8,7 @@ from langchain.chains import RetrievalQA
 from langchain_groq import ChatGroq
 from langchain_community.retrievers import TFIDFRetriever
 from langchain.prompts import PromptTemplate
-
+import re
 # Simple in-memory cache to avoid repeated API calls
 _query_cache = {}
 _cache_max_size = 50
@@ -188,50 +188,94 @@ def process_scheme_query_with_retry(rag_chain, user_query, max_retries=3):
     return "Unable to process query after multiple attempts. Please try a simpler question."
 
 
-def query_all_schemes_optimized(rag_chain):
-    """
-    Optimized comprehensive scheme search to avoid rate limits.
-    """
-    # Use fewer, more targeted queries
-    priority_queries = [
-        "government schemes list names",
-        "सरकारी योजना नावे",  # Government scheme names in Marathi
-        "welfare programs benefits"
+import re
+import time
+
+def extract_schemes_from_text(text):
+    """Extract scheme names from text using pattern matching"""
+    schemes = set()
+    
+    scheme_patterns = [
+        r'^[A-Z][A-Za-z\s\d\-\(\)]+(?:Scheme|Yojana|योजना|Program|Programme|Mission|Campaign).*$',
+        r'^\d+\.\s*([A-Z][A-Za-z\s\d\-\(\)]+)$',
+        r'^•\s*([A-Z][A-Za-z\s\d\-\(\)]+)$',
+        r'^-\s*([A-Z][A-Za-z\s\d\-\(\)]+)$',
     ]
     
-    results = []
-    unique_content = set()
+    lines = text.split('\n')
+    for line in lines:
+        line = line.strip()
+        if 10 < len(line) < 150:
+            for pattern in scheme_patterns:
+                if re.match(pattern, line, re.MULTILINE):
+                    clean_name = re.sub(r'^\d+\.\s*|^•\s*|^-\s*', '', line).strip()
+                    if len(clean_name) > 5:
+                        schemes.add(clean_name)
+
+    keywords = ['scheme', 'yojana', 'योजना', 'program', 'programme', 'mission', 'campaign']
+    words = text.split()
+    for i, word in enumerate(words):
+        if any(kw in word.lower() for kw in keywords):
+            context = ' '.join(words[max(0, i-3):min(len(words), i+3)])
+            if 10 < len(context) < 100:
+                schemes.add(context.strip())
+    
+    return list(schemes)
+
+
+def query_all_schemes_optimized(rag_chain):
+    """
+    Optimized scheme extractor with multi-pass strategy, minimal API load, and pattern matching.
+    """
+    priority_queries = [
+        "list of government schemes with names",
+        "सरकारी योजना नावे सांगा",
+        "welfare and benefit schemes by the government",
+    ]
+    
+    all_extracted_schemes = set()
+    seen_texts = set()
     
     for i, query in enumerate(priority_queries):
         try:
-            # Add delay between queries to respect rate limits
             if i > 0:
-                time.sleep(1)
+                time.sleep(1)  # rate limit protection
             
             result = rag_chain.invoke({"query": query})
-            content = result.get('result', '')
+            content = result.get('result', '') if isinstance(result, dict) else str(result)
             
-            if content and content not in unique_content and len(content) > 30:
-                results.append(content)
-                unique_content.add(content)
-                
+            if content and content not in seen_texts and len(content.strip()) > 30:
+                seen_texts.add(content)
+                schemes = extract_schemes_from_text(content)
+                all_extracted_schemes.update(schemes)
+        
         except Exception as e:
-            if "rate_limit" in str(e):
-                time.sleep(3)  # Wait longer on rate limit
-                break
+            if "rate_limit" in str(e).lower():
+                time.sleep(3)
+                continue
             continue
-    
-    if not results:
-        return "Unable to retrieve comprehensive scheme list due to rate limits. Try asking about specific schemes."
-    
-    # Simple combination without additional API call
-    if len(results) == 1:
-        return results[0]
-    else:
-        combined = "Scheme list\n\n"
-        for i, result in enumerate(results, 1):
-            combined += f"\n{result}\n"
-        return combined
+
+    # Fallback if not enough schemes found
+    if len(all_extracted_schemes) < 5:
+        try:
+            result = rag_chain.invoke({"query": "List all government schemes mentioned in the documents."})
+            content = result.get('result', '') if isinstance(result, dict) else str(result)
+            fallback_schemes = extract_schemes_from_text(content)
+            all_extracted_schemes.update(fallback_schemes)
+        except:
+            pass
+
+    if not all_extracted_schemes:
+        return "No government schemes were confidently extracted. Please try refining your query."
+
+    schemes_list = sorted(list(all_extracted_schemes))
+    response = f"✅ Found {len(schemes_list)} schemes:\n\n"
+    for i, scheme in enumerate(schemes_list, 1):
+        response += f"{i}. {scheme}\n"
+
+    response += "\n\nℹ️ Note: This list is extracted using pattern recognition and RAG-based queries. Some names may be partial or inferred."
+
+    return response
 
 
 def get_optimized_query_suggestions():
