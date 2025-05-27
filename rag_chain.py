@@ -1,330 +1,350 @@
-import tempfile
+import streamlit as st
+from dotenv import load_dotenv
 import os
+from groq import Groq
+from rag_chain import (
+    build_rag_chain_from_files, 
+    process_scheme_query_with_retry, 
+    get_optimized_query_suggestions,
+    get_model_options
+)
+import tempfile
+import pandas as pd
+import io
 import time
-import hashlib
-from langchain_community.document_loaders import PyPDFLoader, TextLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.chains import RetrievalQA
-from langchain_groq import ChatGroq
-from langchain_community.retrievers import TFIDFRetriever
-from langchain.prompts import PromptTemplate
+load_dotenv()
 
-# Simple in-memory cache to avoid repeated API calls
-_query_cache = {}
-_cache_max_size = 50
+def init_session_state():
+    if "chat_history" not in st.session_state:
+        st.session_state.chat_history = []
+    if "suggested_query" not in st.session_state:
+        st.session_state.suggested_query = ""
+    if "last_query_time" not in st.session_state:
+        st.session_state.last_query_time = 0
+    if "rag_chain" not in st.session_state:
+        st.session_state.rag_chain = None
+    if "debug_mode" not in st.session_state:
+        st.session_state.debug_mode = False
 
+def transcribe_audio(client, audio_bytes):
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_audio:
+        temp_audio.write(audio_bytes)
+        temp_path = temp_audio.name
 
-def get_query_hash(query_text):
-    """Generate a hash for caching queries"""
-    return hashlib.md5(query_text.encode()).hexdigest()
-
-def cache_result(query_hash, result):
-    """Cache query result - only cache non-empty results"""
-    global _query_cache
-    if not result or result.strip() == "":  # Don't cache empty results
-        return
-    
-    if len(_query_cache) >= _cache_max_size:
-        oldest_key = next(iter(_query_cache))
-        del _query_cache[oldest_key]
-    _query_cache[query_hash] = result
-
-def get_cached_result(query_hash):
-    """Get cached result if available and non-empty"""
-    cached = _query_cache.get(query_hash)
-    if cached and cached.strip():  # Only return non-empty cached results
-        return cached
-    return None
-
-def build_rag_chain_from_files(pdf_file, txt_file, groq_api_key, enhanced_mode=True, debug=False):
-    """
-    Build a rate-limit optimized RAG chain with improved error handling.
-    """
-    pdf_path = txt_path = None
-    if not (pdf_file or txt_file):
-        raise ValueError("At least one file (PDF or TXT) must be provided.")
-    
     try:
-        # Save uploaded files
-        if pdf_file:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_pdf:
-                tmp_pdf.write(pdf_file.read())
-                pdf_path = tmp_pdf.name
-        if txt_file:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp_txt:
-                tmp_txt.write(txt_file.read())
-                txt_path = tmp_txt.name
-
-        # Load documents
-        all_docs = []
-        if pdf_path:
-            pdf_docs = PyPDFLoader(pdf_path).load()
-            all_docs += pdf_docs
-            if debug:
-                print(f"Loaded {len(pdf_docs)} PDF pages")
-        if txt_path:
-            txt_docs = TextLoader(txt_path, encoding="utf-8").load()
-            all_docs += txt_docs
-            if debug:
-                print(f"Loaded {len(txt_docs)} text documents")
-        
-        if not all_docs:
-            raise ValueError("No valid documents loaded.")
-
-        # Check if documents have content
-        total_content = sum(len(doc.page_content) for doc in all_docs)
-        if total_content == 0:
-            raise ValueError("Documents are empty - no content found.")
-        
-        if debug:
-            print(f"Total content length: {total_content} characters")
-
-        # Improved chunking
-        if enhanced_mode:
-            splitter = RecursiveCharacterTextSplitter(
-                chunk_size=800,  # Increased from 600
-                chunk_overlap=100,  # Reduced overlap
-                separators=["\n\n", "\n", ".", "!", "?", ";", ",", " ", ""]
+        with open(temp_path, "rb") as file:
+            transcription = client.audio.transcriptions.create(
+                file=file,
+                model="whisper-large-v3",
+                response_format="verbose_json",
+                timestamp_granularities=["word", "segment"],
+                temperature=0.0
             )
-        else:
-            splitter = RecursiveCharacterTextSplitter(chunk_size=1200, chunk_overlap=200)
-        
-        splits = splitter.split_documents(all_docs)
-        
-        if debug:
-            print(f"Created {len(splits)} chunks")
-            if splits:
-                print(f"Sample chunk length: {len(splits[0].page_content)}")
-        
-        if not splits:
-            raise ValueError("Document splitting failed - no chunks created.")
-        
-        # Ensure we have meaningful chunks
-        valid_splits = [split for split in splits if len(split.page_content.strip()) > 50]
-        if not valid_splits:
-            raise ValueError("No meaningful chunks found after splitting.")
-        
-        # Limit retrieval to avoid token overflow
-        max_chunks = min(15 if enhanced_mode else 20, len(valid_splits))
-        retriever = TFIDFRetriever.from_documents(valid_splits, k=max_chunks)
-
-        # Use smaller, faster model for efficiency
-        llm = ChatGroq(
-            api_key=groq_api_key, 
-            model="llama-3.1-8b-instant",
-            temperature=0.1,
-            max_tokens=2048
-        )
-        
-        # Improved prompt
-        if enhanced_mode:
-            custom_prompt = PromptTemplate(
-                template="""You are a helpful assistant that answers questions based on the provided context.
-
-Context: {context}
-
-Question: {question}
-
-Instructions:
-- Answer based only on the information provided in the context
-- If the context doesn't contain enough information to answer the question, say "I don't have enough information in the provided documents to answer this question."
-- For scheme lists: List ALL schemes found, including both English and Marathi names
-- Be specific and detailed in your response
-- Don't make up information not present in the context
-
-Answer:""",
-                input_variables=["context", "question"]
-            )
-        else:
-            custom_prompt = None
-
-        chain_kwargs = {"prompt": custom_prompt} if custom_prompt else {}
-        
-        rag_chain = RetrievalQA.from_chain_type(
-            llm=llm,
-            chain_type="stuff",
-            retriever=retriever,
-            return_source_documents=True,  # Enable for debugging
-            chain_type_kwargs=chain_kwargs
-        )
-        
-        return rag_chain
-            
-    except Exception as e:
-        raise ValueError(f"Failed to build RAG chain: {str(e)}")
+        return transcription.text
     finally:
-        if pdf_path and os.path.exists(pdf_path):
-            os.unlink(pdf_path)
-        if txt_path and os.path.exists(txt_path):
-            os.unlink(txt_path)
+        os.unlink(temp_path)
 
+def check_rate_limit_delay():
+    """Check if we need to wait before making another query"""
+    current_time = time.time()
+    time_since_last = current_time - st.session_state.last_query_time
+    min_delay = 2  # Minimum 2 seconds between queries
+    
+    if time_since_last < min_delay:
+        wait_time = min_delay - time_since_last
+        return wait_time
+    return 0
 
-def process_scheme_query_with_retry(rag_chain, user_query, max_retries=3, debug=False):
-    """
-    Process query with improved error handling and debugging.
-    """
-    if not user_query or not user_query.strip():
-        return "Please provide a valid question."
+def main():
+    st.set_page_config(page_title="CMRF RAG Assistant", layout="wide")
+    st.markdown("<h1 style='text-align: center;'>🤖 CMRF RAG Assistant</h1>", unsafe_allow_html=True)
     
-    # Check cache first
-    query_hash = get_query_hash(user_query.lower().strip())
-    cached_result = get_cached_result(query_hash)
-    if cached_result:
-        return f"[Cached] {cached_result}"
+    GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+    if not GROQ_API_KEY:
+        st.error("Missing GROQ_API_KEY. Please set it in your .env file.")
+        st.stop()
+
+    init_session_state()
+
+    # Upload files
+    st.markdown("<h4 style='text-align: center;'>📄 कृपया आरोग्य योजना आणि स्कीम तपशील फाईल्स खाली अपलोड करा</h4>", unsafe_allow_html=True)
+    uploaded_pdf = st.file_uploader("Upload Scheme Details PDF", type=["pdf"])
+    uploaded_txt = st.file_uploader("Upload Arogya Yojna booklet file", type=["txt"])
+
+    if not (uploaded_pdf or uploaded_txt):
+        st.warning("Please upload at least one file (PDF or TXT) to continue.")
+        st.stop()
+
+    # Sidebar Settings
+    st.sidebar.markdown("### ⚙️ Settings")
     
-    # Check for comprehensive queries
-    comprehensive_keywords = [
-        "all schemes", "list schemes", "complete list", "सर्व योजना", 
-        "total schemes", "how many schemes", "scheme names", "सर्व", "यादी"
-    ]
+    # Enhanced mode toggle
+    enhanced_mode = st.sidebar.checkbox(
+        "Enhanced Mode", 
+        value=True, 
+        help="Better scheme coverage but uses more tokens"
+    )
     
-    is_comprehensive_query = any(keyword in user_query.lower() for keyword in comprehensive_keywords)
+    # Debug mode toggle
+    debug_mode = st.sidebar.checkbox(
+        "Debug Mode", 
+        value=False, 
+        help="Show detailed processing information"
+    )
+    st.session_state.debug_mode = debug_mode
     
-    for attempt in range(max_retries):
-        try:
-            if is_comprehensive_query:
-                result = query_all_schemes_optimized(rag_chain, debug)
-            else:
-                # Standard query with debugging
-                response = rag_chain.invoke({"query": user_query})
+    # Rate limit info
+    st.sidebar.markdown("### 📊 Rate Limit Info")
+    queries_count = len(st.session_state.chat_history)
+    st.sidebar.metric("Queries Made", queries_count)
+    
+    if queries_count > 10:
+        st.sidebar.warning("⚠️ High query count. Consider shorter breaks between queries.")
+    
+    # Model information (for display only since we're using the fixed model from rag_chain)
+    st.sidebar.markdown("### 🤖 Model Info")
+    st.sidebar.info("Using: Llama 3.1 8B Instant (optimized for rate limits)")
+
+    # Load Whisper Client and RAG (with caching)
+    whisper_client = Groq(api_key=GROQ_API_KEY)
+    
+    # Build RAG chain only once or when settings change
+    current_settings_key = f"{enhanced_mode}_{debug_mode}"
+    if (st.session_state.rag_chain is None or 
+        getattr(st.session_state, 'current_settings_key', '') != current_settings_key):
+        
+        with st.spinner("🔧 Building optimized RAG system..."):
+            try:
+                # Reset file pointers to beginning
+                if uploaded_pdf:
+                    uploaded_pdf.seek(0)
+                if uploaded_txt:
+                    uploaded_txt.seek(0)
                 
-                if debug:
-                    print(f"Raw response type: {type(response)}")
-                    print(f"Raw response keys: {response.keys() if isinstance(response, dict) else 'Not a dict'}")
+                st.session_state.rag_chain = build_rag_chain_from_files(
+                    uploaded_pdf, 
+                    uploaded_txt, 
+                    GROQ_API_KEY,
+                    enhanced_mode=enhanced_mode,
+                    debug=debug_mode
+                )
+                st.session_state.current_settings_key = current_settings_key
+                st.success("✅ RAG system ready!")
                 
-                # Better result extraction
-                if isinstance(response, dict):
-                    result = response.get('result', '')
-                    if not result:
-                        result = response.get('answer', '')
-                    if not result:
-                        # Try other possible keys
-                        for key in ['output', 'text', 'response']:
-                            if key in response and response[key]:
-                                result = response[key]
-                                break
-                else:
-                    result = str(response)
-                
-                # Check if result is empty or just whitespace
-                if not result or not result.strip():
-                    if debug:
-                        print("Empty result detected, checking source documents...")
-                        if 'source_documents' in response:
-                            print(f"Retrieved {len(response['source_documents'])} documents")
-                            for i, doc in enumerate(response['source_documents'][:2]):
-                                print(f"Doc {i}: {doc.page_content[:200]}...")
+                if debug_mode:
+                    st.info("🔧 Debug mode enabled - detailed processing info will be shown")
                     
-                    result = "I couldn't find relevant information in the documents to answer your question. Please try rephrasing your question or asking about specific topics mentioned in the documents."
-            
-            # Validate result before caching
-            if result and result.strip() and len(result.strip()) > 10:
-                cache_result(query_hash, result)
-                return result
-            else:
-                if debug:
-                    print(f"Result validation failed: '{result}'")
-                result = "I couldn't generate a meaningful response. Please try asking your question differently."
-                return result
-            
-        except Exception as e:
-            error_str = str(e)
-            
-            if debug:
-                print(f"Attempt {attempt + 1} failed: {error_str}")
-            
-            if "rate_limit_exceeded" in error_str or "413" in error_str:
-                if attempt < max_retries - 1:
-                    wait_time = (attempt + 1) * 2
-                    time.sleep(wait_time)
-                    continue
-                else:
-                    return "Rate limit reached. Please wait a moment and try again."
-            
-            elif "Request too large" in error_str:
-                return "Query too large. Try asking about specific topics instead."
-            
-            else:
-                if attempt == max_retries - 1:
-                    return f"Error processing query: {error_str}"
-                continue
+            except Exception as e:
+                st.error(f"Failed to build RAG system: {e}")
+                if debug_mode:
+                    st.exception(e)
+                st.stop()
     
-    return "Unable to process query after multiple attempts. Please try again."
+    # Rate-limit friendly suggestions
+    with st.expander("💡 Optimized Query Suggestions", expanded=False):
+        st.markdown("**Rate-limit friendly queries:**")
+        suggestions = get_optimized_query_suggestions()
+        
+        col1, col2 = st.columns(2)
+        for i, suggestion in enumerate(suggestions):
+            col = col1 if i % 2 == 0 else col2
+            with col:
+                if st.button(suggestion, key=f"suggestion_{i}", use_container_width=True):
+                    st.session_state.suggested_query = suggestion
+                    st.rerun()
 
-def query_all_schemes_optimized(rag_chain):
-    """
-    Fixed version - this was causing blank responses!
-    """
-    priority_queries = [
-        "government schemes list names",
-        "सरकारी योजना नावे",  # Government scheme names in Marathi
-        "welfare programs benefits"
-    ]
+    # Input Section
+    st.markdown("### Ask a question by typing or using audio input")
+    col1, col2 = st.columns([3, 1])
     
-    results = []
-    unique_content = set()
+    with col1:
+        default_value = st.session_state.suggested_query if st.session_state.suggested_query else ""
+        user_input = st.text_input(
+            "Enter your question", 
+            key="text_input", 
+            placeholder="e.g. मुख्य योजना दाखवा / Show main schemes...",
+            value=default_value
+        )
+        if st.session_state.suggested_query:
+            st.session_state.suggested_query = ""
     
-    for i, query in enumerate(priority_queries):
+    with col2:
+        audio_value = st.audio_input("🎤 Record your query")
+
+    # Audio transcription
+    user_text = None
+    if audio_value is not None:
         try:
-            # Add delay between queries to respect rate limits
-            if i > 0:
-                time.sleep(1)
-            
-            result = rag_chain.invoke({"query": query})
-            content = result.get('result', '')
-            
-            if content and content not in unique_content and len(content) > 30:
-                results.append(content)
-                unique_content.add(content)
-                
+            with st.spinner("🎧 Transcribing audio..."):
+                user_text = transcribe_audio(whisper_client, audio_value.getvalue())
+            st.success(f"🎧 Transcribed: {user_text}")
         except Exception as e:
-            if "rate_limit" in str(e):
-                time.sleep(3)  # Wait longer on rate limit
-                break
-            continue
+            st.error(f"Transcription Error: {str(e)}")
+            if debug_mode:
+                st.exception(e)
+
+    # Query processing with rate limit handling
+    if st.button("🔍 Get Answer", type="primary") or user_text:
+        input_text = user_text if user_text else user_input.strip()
+        if input_text:
+            # Check rate limit
+            wait_time = check_rate_limit_delay()
+            if wait_time > 0:
+                st.warning(f"⏳ Please wait {wait_time:.1f} seconds to avoid rate limits...")
+                time.sleep(wait_time)
+            
+            try:
+                with st.spinner("🔍 Processing query..."):
+                    st.session_state.last_query_time = time.time()
+                    
+                    # Use the optimized query processor with debug option
+                    assistant_reply = process_scheme_query_with_retry(
+                        st.session_state.rag_chain, 
+                        input_text,
+                        max_retries=3,
+                        debug=debug_mode
+                    )
+                
+                # Add to chat history
+                st.session_state.chat_history.insert(0, {
+                    "user": input_text, 
+                    "assistant": assistant_reply,
+                    "model": "llama-3.1-8b-instant",
+                    "timestamp": time.strftime("%H:%M:%S"),
+                    "enhanced_mode": enhanced_mode
+                })
+                
+                # Show result
+                st.markdown("### 📋 Answer:")
+                
+                # Show if result was cached
+                is_cached = assistant_reply.startswith("[Cached]")
+                if is_cached:
+                    st.info("🚀 This result was retrieved from cache (faster response)")
+                    assistant_reply = assistant_reply.replace("[Cached] ", "")
+                
+                st.markdown(
+                    f"<div style='background-color:#E8F5E9; padding:15px; border-radius:8px; margin-bottom:15px; border-left: 4px solid #4CAF50;'>"
+                    f"<b>🤖 Assistant:</b><br><br>{assistant_reply}</div>", 
+                    unsafe_allow_html=True
+                )
+                
+                if debug_mode:
+                    st.markdown("### 🔧 Debug Information:")
+                    st.json({
+                        "query_length": len(input_text),
+                        "response_length": len(assistant_reply),
+                        "was_cached": is_cached,
+                        "enhanced_mode": enhanced_mode,
+                        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+                    })
+                
+            except Exception as e:
+                st.error(f"Error: {e}")
+                if debug_mode:
+                    st.exception(e)
+                if "rate_limit" in str(e).lower():
+                    st.info("💡 **Tips to avoid rate limits:**\n- Wait 10-15 seconds between queries\n- Use simpler, more specific questions\n- Try asking about specific schemes instead of 'all schemes'")
+        else:
+            st.warning("Please enter a question or record audio.")
+
+    # Enhanced Chat History
+    with st.expander("📜 Chat History", expanded=len(st.session_state.chat_history) > 0):
+        if st.session_state.chat_history:
+            st.markdown(f"**Total conversations: {len(st.session_state.chat_history)}**")
+            
+            for i, entry in enumerate(st.session_state.chat_history):
+                st.markdown(f"---")
+                
+                # Show metadata
+                model_used = entry.get('model', 'Unknown')
+                timestamp = entry.get('timestamp', 'Unknown time')
+                enhanced = entry.get('enhanced_mode', False)
+                mode_text = "Enhanced" if enhanced else "Standard"
+                
+                st.caption(f"#{len(st.session_state.chat_history) - i} | Model: {model_used} | Mode: {mode_text} | Time: {timestamp}")
+                
+                st.markdown(
+                    f"""<div style='background-color:#E3F2FD; padding:10px; border-radius:8px; margin-bottom:5px; border-left: 4px solid #2196F3;'>
+                    <strong>🧑 Citizen:</strong><br>{entry['user']}
+                    </div>""", 
+                    unsafe_allow_html=True
+                )
+                
+                st.markdown(
+                    f"""<div style='background-color:#E8F5E9; padding:10px; border-radius:8px; margin-bottom:15px; border-left: 4px solid #4CAF50;'>
+                    <strong>🤖 Assistant:</strong><br>{entry['assistant']}
+                    </div>""", 
+                    unsafe_allow_html=True
+                )
+            
+            # Download and management options
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                # Excel download with metadata
+                df = pd.DataFrame(st.session_state.chat_history)
+                df = df[['user', 'assistant', 'model', 'enhanced_mode', 'timestamp']]
+                df.columns = ['Query', 'Response', 'Model Used', 'Enhanced Mode', 'Time']
+                df.index = range(1, len(df) + 1)
+                
+                buffer = io.BytesIO()
+                with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+                    df.to_excel(writer, sheet_name='Chat History', index=True)
+                
+                st.download_button(
+                    label="📥 Download Excel",
+                    data=buffer.getvalue(),
+                    file_name=f"cmrf_chat_history_{time.strftime('%Y%m%d_%H%M')}.xlsx",
+                    mime="application/vnd.ms-excel",
+                    use_container_width=True
+                )
+            
+            with col2:
+                if st.button("🗑️ Clear History", use_container_width=True):
+                    st.session_state.chat_history = []
+                    st.rerun()
+            
+            with col3:
+                if st.button("🔄 Reset RAG", use_container_width=True, help="Reset RAG system and cache"):
+                    st.session_state.rag_chain = None
+                    # Clear the internal cache from rag_chain module
+                    from rag_chain import _query_cache
+                    _query_cache.clear()
+                    st.success("RAG system and cache cleared!")
+                    st.rerun()
+                    
+        else:
+            st.info("No chat history yet. Ask your first question!")
+            st.markdown("""
+            **💡 Rate-limit friendly tips:**
+            - Start with specific questions rather than "list all schemes"
+            - Wait 2-3 seconds between queries
+            - Cached results (marked with 🚀) don't count against rate limits
+            - Use Enhanced Mode for better scheme coverage
+            """)
+
+    # Footer with tips and system info
+    st.markdown("---")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.session_state.chat_history:
+            mode_text = "Enhanced" if enhanced_mode else "Standard"
+            st.markdown(f"📊 **Session:** {len(st.session_state.chat_history)} queries | Mode: {mode_text}")
+    with col2:
+        st.markdown("💡 **Tip:** Use specific questions to avoid rate limits")
     
-    if not results:
-        return "Unable to retrieve comprehensive scheme list due to rate limits. Try asking about specific schemes."
-    
-    if len(results) == 1:
-        return results[0]
-    else:
-        combined = "Here are the government schemes found:\n\n"
-        for i, result in enumerate(results, 1):
-            combined += f"=== Query {i} Results ===\n{result}\n\n"
-        return combined
+    # System status
+    if debug_mode:
+        st.markdown("### 🔧 System Status")
+        cache_size = len(getattr(__import__('rag_chain'), '_query_cache', {}))
+        st.metric("Cache Size", cache_size)
+        
+        if st.button("Clear Cache Only"):
+            from rag_chain import _query_cache
+            _query_cache.clear()
+            st.success("Cache cleared!")
+            st.rerun()
 
-def get_optimized_query_suggestions():
-    return [
-        "List main government schemes",
-        "सरकारी योजना नावे (Government scheme names)", 
-        "Top welfare schemes details",
-        "Health scheme information",
-        "Financial assistance programs",
-        "Eligibility criteria for schemes"
-    ]
-
-def get_model_options():
-    return {
-        "llama-3.1-8b-instant": {
-            "name": "Llama 3.1 8B (Fast & Cheap)", 
-            "description": "Best for quick queries, lower rate limits"
-        },
-        "llama-3.3-70b-versatile": {
-            "name": "Llama 3.3 70B (High Quality)", 
-            "description": "Best quality, but higher rate limits"
-        },
-        "gemma2-9b-it":{
-            "name": "Gemma2 9b model", 
-            "description": "Higher rate limits"
-        }
-    }
-
-# Add the model choice function (same as before but with debug parameter)
-def build_rag_chain_with_model_choice(pdf_file, txt_file, groq_api_key, model_choice="llama-3.1-8b-instant", enhanced_mode=True, debug=False):
-    # Implementation similar to build_rag_chain_from_files but with model parameter
-    # (keeping it shorter for space, but add debug parameter throughout)
-    pass
-
-# Alias for backward compatibility
-process_scheme_query = process_scheme_query_with_retry
+if __name__ == "__main__":
+    main()
