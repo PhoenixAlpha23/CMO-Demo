@@ -253,6 +253,11 @@ def get_model_options():
         "llama-3.3-70b-versatile": {
             "name": "Llama 3.3 70B (High Quality)", 
             "description": "Best quality, but higher rate limits"
+        },
+        "gemma2-9b-it":{
+            "name": "Gemma2 9b model", 
+            "description": "Higher rate limits"
+        },
         }
     }
 
