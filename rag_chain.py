@@ -251,10 +251,6 @@ def query_all_schemes_optimized(rag_chain):
             all_extracted_schemes.update(fallback_schemes)
         except:
             pass
-
-    if not all_extracted_schemes:
-        return "No government schemes were confidently extracted. Please try refining your query."
-
     schemes_list = sorted(list(all_extracted_schemes))
     response = f"✅ Found {len(schemes_list)} schemes:\n\n"
     for i, scheme in enumerate(schemes_list, 1):
