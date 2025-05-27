@@ -257,7 +257,6 @@ def get_model_options():
         "gemma2-9b-it":{
             "name": "Gemma2 9b model", 
             "description": "Higher rate limits"
-        },
         }
     }
 
