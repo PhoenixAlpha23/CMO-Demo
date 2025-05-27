@@ -187,12 +187,6 @@ def process_scheme_query_with_retry(rag_chain, user_query, max_retries=3):
     
     return "Unable to process query after multiple attempts. Please try a simpler question."
 
-
-import re
-import time
-
-import re
-
 def extract_all_scheme_names(text):
     # Normalize text
     text = re.sub(r'\s+', ' ', text)  # collapse all whitespace
@@ -200,11 +194,11 @@ def extract_all_scheme_names(text):
 
     # Define scheme patterns
     patterns = [
-        r'\b(?:[A-Z][a-z]+(?: [A-Z][a-z]+)* )?(?:scheme|yojana|Yojana|Scheme|अभियान|योजना)\b',  # General English or Marathi scheme mentions
-        r'\b(?:[A-Z][a-z]+ ){0,5}Programme\b',  # National Programme, e.g., National Programme for Health Care...
+        r'\b(?:[A-Z][a-z]+(?: [A-Z][a-z]+)* )?(?:scheme|yojana|Yojana|Scheme|अभियान|योजना|कार्यक्रम|सेवा|केंद्र|संपर्क)\b',  # General English or Marathi scheme mentions
+        r'\b(?:[A-Z][a-z]+ ){0,5}कार्यक्रम\b',  # National Programme, .
         r'\b(?:Pradhan Mantri|प्रधानमंत्री|माता|जननी|महात्मा).*?(?:Scheme|Yojana|योजना)\b',  # Named schemes
         r'[A-Z]{2,10}\s*(?:Scheme|Yojana|Programme)',  # Acronyms like JSY, CGHS, NHM
-        r'\b[A-Z][a-z]+(?:-[A-Z][a-z]+)*\s+Abhiyan\b',  # Abhiyan-type names (e.g., Suraksha Abhiyan)
+        r'\b[A-Z][a-z]+(?:-[A-Z][a-z]+)*\s+Yojna\b',  # Abhiyan-type names (e.g., Suraksha Abhiyan)
     ]
 
     # Combine and apply all patterns
