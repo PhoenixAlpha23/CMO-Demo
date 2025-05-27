@@ -222,7 +222,7 @@ def query_all_schemes_optimized(rag_chain):
     else:
         combined = "\n\n"
         for i, result in enumerate(results, 1):
-            combined += f"\n\n"
+            combined += f"\n{result}\n"
         return combined
 
 
