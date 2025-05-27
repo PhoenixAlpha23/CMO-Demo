@@ -68,7 +68,7 @@ def build_rag_chain_from_files(pdf_file, txt_file, groq_api_key, enhanced_mode=T
                 separators=["\n\n", "\n", ".", "!", "?", ",", " ", ""]
             )
         else:
-            splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=150)
+            splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         
         splits = splitter.split_documents(all_docs)
         
