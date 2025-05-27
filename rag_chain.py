@@ -325,7 +325,7 @@ def build_rag_chain_with_model_choice(pdf_file, txt_file, groq_api_key, model_ch
 
         # Adjust parameters based on model
         if model_choice == "llama-3.1-8b-instant":
-            chunk_size, max_chunks, max_tokens = 500, 12, 1500
+            chunk_size, max_chunks, max_tokens = 800, 12, 1500
         elif model_choice == "llama-3.1-70b-versatile":
             chunk_size, max_chunks, max_tokens = 700, 18, 2500
         else:  # llama-3.3-70b-versatile
@@ -342,7 +342,7 @@ def build_rag_chain_with_model_choice(pdf_file, txt_file, groq_api_key, model_ch
         llm = ChatGroq(
             api_key=groq_api_key, 
             model=model_choice,
-            temperature=0.1,
+            temperature=0.0,
             max_tokens=max_tokens
         )
         
