@@ -9,3 +9,6 @@ groq
 pypdf
 XlsxWriter
 rank_bm25
+gtts
+pygame 
+langdetect
