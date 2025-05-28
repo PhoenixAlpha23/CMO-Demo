@@ -87,7 +87,7 @@ def build_rag_chain_from_files(pdf_file, txt_file, groq_api_key, enhanced_mode=T
         # Optimized prompt to reduce token usage
         if enhanced_mode:
             custom_prompt = PromptTemplate(
-                template="""You are a well-informed helpline assistant used for answering citizenn queries based on the context,
+                template="""You are a well-informed helpline assistant used for answering citizenn queries based on the context only and no other information,
                 answer concisely.For list of schemes:Extract all schemes based upon domains, such as healthcare, education, welfare, etc.
                 Use the following formats for listing schemes:
                 Numbered list (e.g., 1. Digital India Programme)
