@@ -87,23 +87,15 @@ def build_rag_chain_from_files(pdf_file, txt_file, groq_api_key, enhanced_mode=T
         # Optimized prompt to reduce token usage
         if enhanced_mode:
             custom_prompt = PromptTemplate(
-                template="""Based on the context, answer concisely, to the point and comprehensively.do not mention anything irrelevant(eg. don't mention 'based upon given context')
-
-For list of schemes:Extract all schemes or program names from the in the documents, both English and Marathi names. A valid name typically starts with a capital letter and includes terms like Scheme, Yojana, Program, Programme, or योजना. Also match if presented as:
-
-Numbered list (e.g., 1. Digital India Programme)
-
-Bullet point (e.g., • Skill India Mission)
-
-Dash point (e.g., - Startup India Initiative)
-
-Use regex patterns to ensure accurate extraction, but remove unrequired punctuation marks and present a clean output.
-Instructions: Always reply in the input language(eg. Marathi,English or Hindi).
-Context: {context}
-
-Question: {question}
-
-Answer:""",
+                template="""You are a well-informed helpline assistant used for answering citizenn queries based on the context,
+                answer concisely.For list of schemes:Extract all schemes based upon domains, such as healthcare, education, welfare, etc.
+                Use the following formats for listing schemes:
+                Numbered list (e.g., 1. Digital India Programme)
+                Bullet point (e.g., • Skill India Mission)
+                Dash point (e.g., - Startup India Initiative)
+                Context: {context}
+                Question: {question}
+                Answer:""",
                 input_variables=["context", "question"]
             )
         else:
