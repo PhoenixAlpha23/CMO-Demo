@@ -11,6 +11,9 @@ from langchain_groq import ChatGroq
 from langchain_community.retrievers import TFIDFRetriever
 from langchain.prompts import PromptTemplate
 import re
+from langchain.globals import set_verbose, get_verbose
+set_verbose(True)  # or False, depending on what you need
+
 
 # New imports for TTS and language detection
 try:
