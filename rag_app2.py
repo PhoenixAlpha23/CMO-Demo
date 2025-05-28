@@ -173,7 +173,7 @@ def main():
             
             if st.sidebar.button("🗑️ Clear Audio Cache"):
                 try:
-                    from rag_chain import clear_audio_cache
+                    from rag_chain2 import clear_audio_cache
                     clear_audio_cache()
                     st.sidebar.success("Audio cache cleared!")
                     st.rerun()
