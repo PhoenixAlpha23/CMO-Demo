@@ -9,6 +9,7 @@ groq
 pypdf
 XlsxWriter
 rank_bm25
+# for tts function
 gtts
 pygame 
 langdetect
