@@ -222,9 +222,6 @@ def play_audio_pygame(audio_bytes):
         print(f"Pygame audio error: {e}")
         return False
 
-from typing import ClassVar, List
-from langchain_community.retrievers import TFIDFRetriever
-
 # Global constants — keep these defined at the top level
 ENGLISH_KEYWORDS = [
     "Description:", "Eligibility:", "Target Group:", "Inclusion Criteria:",
@@ -236,7 +233,7 @@ MARATHI_KEYWORDS = [
     "सेवा", "हेल्पलाइन", "टोल फ्री नंबर", "हेल्पलाईनवर", "अधिक माहितीसाठी", "अधिक", " माहिती"
 ]
 
-class EnhancedTFIDFRetriever(TFIDFRetriever):
+class EnhancedTFIDFRetriever(TFIDFRetriever,english_keywords,marathi_keywords):
     """Enhanced TFIDF Retriever with keyword boosting for government schemes"""
 
     ENGLISH_KEYWORDS: ClassVar[List[str]] = ENGLISH_KEYWORDS
