@@ -641,6 +641,7 @@ def get_tts_settings():
             'en': 'English',
             'hi': 'Hindi',
             'mr': 'Marathi'
+        },
         "cache_stats": {
             "audio_cache_size": len(_audio_cache),
             "text_cache_size": len(_query_cache)
