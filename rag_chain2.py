@@ -238,12 +238,12 @@ def build_rag_chain_from_files(pdf_file, txt_file, groq_api_key, enhanced_mode=T
         # Optimized chunking for token limits
         if enhanced_mode:
             splitter = RecursiveCharacterTextSplitter(
-                chunk_size=600,  # Smaller chunks to avoid token limits
-                chunk_overlap=200,
+                chunk_size=800,  # Smaller chunks to avoid token limits
+                chunk_overlap=150,
                 separators=["\n\n", "\n", ".", "!", "?", ",", " ", ""]
             )
         else:
-            splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=150)
+            splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         
         splits = splitter.split_documents(all_docs)
         
@@ -263,20 +263,25 @@ def build_rag_chain_from_files(pdf_file, txt_file, groq_api_key, enhanced_mode=T
         if enhanced_mode:
             # Custom prompt for enhanced mode
             custom_prompt = PromptTemplate(
-                template="""You are a well-informed helpline assistant used for answering citizenn queries based on the context,
-                answer concisely.For list of schemes:Extract all schemes based upon domains, such as healthcare, education, welfare, etc.
-                Use the following formats for listing schemes:
-                Numbered list (e.g., 1. Digital India Programme)
-                Bullet point (e.g., • Skill India Mission)
-                Dash point (e.g., - Startup India Initiative)
-                Context: {context}
-                Question: {question}
-                Answer:""",
+                template="""You are a Knowledge Assistant designed for answering questions specifically from the knowledge base provided to you.
+Your task is as follows: give a detailed response for user query in the user language (eg. what are some schemes? --> Here is a list of some schemes)
+Ensure your response follows these styles and tone in your response:
+* Use direct, everyday language
+* Personal and human
+* Favour detailed responses, with mentions of websites and headings such as description, eligibility or उद्देशः, अंतर्भूत घटकः
+* In case no relevant information is found, default your response to a phrase like "For more details contact on 104/102 helpline numbers."
+Your goal is to achieve the following: help a citizen understand about the schemes and its eligibility criteria.
+Here is the content you will work with: {context}
+Question: {question}
+Now perform the task as instructed above.
+Answer:""",
                 input_variables=["context", "question"]
             )
 
         else:
-            custom_prompt = None
+            custom_prompt = PromptTemplate(
+                template=""" You are a knowledgable Assistant designed to answer queries of Citizens in simple, everyday language ,answer in the exact way the the questions are asked. 
+                your goal is to help them understand which schemes are best suited for them. If you do not have relevant context for user query suggest calling upon 104/102 helpline numbers"""
 
         chain_kwargs = {"prompt": custom_prompt} if custom_prompt else {}
         
@@ -518,9 +523,7 @@ def build_rag_chain_with_model_choice(pdf_file, txt_file, groq_api_key, model_ch
 
         # Adjust parameters based on model
         if model_choice == "llama-3.1-8b-instant":
-            chunk_size, max_chunks, max_tokens = 800, 12, 1500
-        elif model_choice == "llama-3.1-70b-versatile":
-            chunk_size, max_chunks, max_tokens = 700, 18, 2500
+            chunk_size, max_chunks, max_tokens = 1000, 12, 1500
         else:  # llama-3.3-70b-versatile
             chunk_size, max_chunks, max_tokens = 800, 20, 3000
 
