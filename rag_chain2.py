@@ -233,7 +233,7 @@ MARATHI_KEYWORDS = [
     "सेवा", "हेल्पलाइन", "टोल फ्री नंबर", "हेल्पलाईनवर", "अधिक माहितीसाठी", "अधिक", " माहिती"
 ]
 
-class EnhancedTFIDFRetriever(TFIDFRetriever,ENGLISH_KEYWORDS,MARATHI_KEYWORDS):
+class EnhancedTFIDFRetriever(TFIDFRetriever):
     """Enhanced TFIDF Retriever with keyword boosting for government schemes"""
 
     english_keywords: ClassVar[List[str]] = ENGLISH_KEYWORDS
