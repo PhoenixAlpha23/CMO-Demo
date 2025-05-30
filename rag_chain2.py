@@ -324,8 +324,8 @@ def build_rag_chain_from_files(pdf_file, txt_file, groq_api_key, enhanced_mode=T
         if enhanced_mode:
             retriever = EnhancedTFIDFRetriever.from_documents(splits,
                                                               k=min(max_chunks, len(splits)),
-                                                              english_keywords=ENGLISH_KEYWORDS,
-                                                              marathi_keywords=MARATHI_KEYWORDS)
+                                                              english_keywords=EnhancedTFIDFRetriever.ENGLISH_KEYWORDS,
+                                                              marathi_keywords=EnhancedTFIDFRetriever.MARATHI_KEYWORDS)
 
         else:
             retriever = TFIDFRetriever.from_documents(splits, k=min(max_chunks, len(splits)))
