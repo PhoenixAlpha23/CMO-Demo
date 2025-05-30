@@ -290,7 +290,7 @@ Answer:""",
         
         return RetrievalQA.from_chain_type(
             llm=llm,
-            chain_type="stuff",
+            chain_type="refine",
             retriever=retriever,
             return_source_documents=False,
             chain_type_kwargs=chain_kwargs
