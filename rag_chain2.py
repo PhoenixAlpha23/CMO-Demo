@@ -225,8 +225,8 @@ class EnhancedTFIDFRetriever(TFIDFRetriever):
     "उद्देशः", "अंतर्भूत घटक", "हेल्प लाईन क्र", "योजना", "लाभार्थी", 
     "सेवा", "हेल्पलाइन", "टोल फ्री नंबर", "हेल्पलाईनवर","अधिक माहितीसाठी","अधिक"," माहिती"
 ]
-
-ENGLISH_KEYWORDS = [
+    
+    ENGLISH_KEYWORDS = [
     "Description:", "Eligibility:", "Target Group:", "Inclusion Criteria:",
     "Exclusion Criteria:", "Benefits:", "Helpline:"
 ]
