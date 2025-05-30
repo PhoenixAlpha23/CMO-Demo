@@ -32,16 +32,6 @@ _cache_max_size = 50
 _audio_cache = {}
 _audio_cache_max_size = 20
 
-MARATHI_KEYWORDS = [
-    "उद्देशः", "अंतर्भूत घटक", "हेल्प लाईन क्र", "योजना", "लाभार्थी", 
-    "सेवा", "हेल्पलाइन", "टोल फ्री नंबर", "हेल्पलाईनवर","अधिक माहितीसाठी","अधिक"," माहिती"
-]
-
-ENGLISH_KEYWORDS = [
-    "Description:", "Eligibility:", "Target Group:", "Inclusion Criteria:",
-    "Exclusion Criteria:", "Benefits:", "Helpline:"
-]
-
 # UNIFIED GOVERNMENT SCHEMES PROMPT
 GOVERNMENT_SCHEMES_PROMPT = """You are a Knowledge Assistant designed for answering questions specifically from the knowledge base provided to you.
 
@@ -231,7 +221,15 @@ def play_audio_pygame(audio_bytes):
 
 class EnhancedTFIDFRetriever(TFIDFRetriever):
     """Enhanced TFIDF Retriever with keyword boosting for government schemes"""
-    
+    MARATHI_KEYWORDS = [
+    "उद्देशः", "अंतर्भूत घटक", "हेल्प लाईन क्र", "योजना", "लाभार्थी", 
+    "सेवा", "हेल्पलाइन", "टोल फ्री नंबर", "हेल्पलाईनवर","अधिक माहितीसाठी","अधिक"," माहिती"
+]
+
+ENGLISH_KEYWORDS = [
+    "Description:", "Eligibility:", "Target Group:", "Inclusion Criteria:",
+    "Exclusion Criteria:", "Benefits:", "Helpline:"
+]
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.english_keywords = ENGLISH_KEYWORDS
