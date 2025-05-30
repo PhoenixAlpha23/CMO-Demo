@@ -53,16 +53,6 @@ Now perform the task as instructed above.
 
 Answer:"""
 
-ENGLISH_KEYWORDS = [
-    "Description:", "Eligibility:", "Target Group:", "Inclusion Criteria:",
-    "Exclusion Criteria:", "Benefits:", "Helpline:"
-]
-
-MARATHI_KEYWORDS = [
-    "उद्देशः", "अंतर्भूत घटक", "हेल्प लाईन क्र", "योजना", "लाभार्थी", 
-    "सेवा", "हेल्पलाइन", "टोल फ्री नंबर", "हेल्पलाईनवर", "अधिक माहितीसाठी", "अधिक", " माहिती"
-]
-
 def get_query_hash(query_text):
     """Generate a hash for caching queries"""
     return hashlib.md5(query_text.encode()).hexdigest()
@@ -229,6 +219,20 @@ def play_audio_pygame(audio_bytes):
         print(f"Pygame audio error: {e}")
         return False
 
+from typing import ClassVar, List
+from langchain_community.retrievers import TFIDFRetriever
+
+# Global constants — keep these defined at the top level
+ENGLISH_KEYWORDS = [
+    "Description:", "Eligibility:", "Target Group:", "Inclusion Criteria:",
+    "Exclusion Criteria:", "Benefits:", "Helpline:"
+]
+
+MARATHI_KEYWORDS = [
+    "उद्देशः", "अंतर्भूत घटक", "हेल्प लाईन क्र", "योजना", "लाभार्थी", 
+    "सेवा", "हेल्पलाइन", "टोल फ्री नंबर", "हेल्पलाईनवर", "अधिक माहितीसाठी", "अधिक", " माहिती"
+]
+
 class EnhancedTFIDFRetriever(TFIDFRetriever):
     """Enhanced TFIDF Retriever with keyword boosting for government schemes"""
 
@@ -237,45 +241,41 @@ class EnhancedTFIDFRetriever(TFIDFRetriever):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.english_keywords = self.ENGLISH_KEYWORDS
-        self.marathi_keywords = self.MARATHI_KEYWORDS
+        self.english_keywords = EnhancedTFIDFRetriever.ENGLISH_KEYWORDS
+        self.marathi_keywords = EnhancedTFIDFRetriever.MARATHI_KEYWORDS
 
-    
     def get_relevant_documents(self, query, k=None):
-        """Enhanced retrieval with keyword boosting"""
         if k is None:
             k = self.k
-        
-        # Get base documents
-        base_docs = super().get_relevant_documents(query, k * 2)  # Get more initially
-        
-        # Score documents based on keyword presence
+
+        base_docs = super().get_relevant_documents(query, k * 2)
         scored_docs = []
+
         for doc in base_docs:
             score = 0
             content = doc.page_content.lower()
-            
-            # Boost score for English keywords
+
+            # Boost for English keywords
             for keyword in self.english_keywords:
                 if keyword.lower() in content:
                     score += 2
-            
-            # Boost score for Marathi keywords
+
+            # Boost for Marathi keywords
             for keyword in self.marathi_keywords:
-                if keyword in doc.page_content:  # Case sensitive for Marathi
+                if keyword in doc.page_content:
                     score += 3
-            
-            # Boost for scheme-related terms
+
+            # Boost for common scheme terms
             scheme_terms = ['scheme', 'yojana', 'योजना', 'कार्यक्रम', 'सेवा', 'programme', 'mission']
             for term in scheme_terms:
                 if term in content:
                     score += 1
-            
+
             scored_docs.append((doc, score))
-        
-        # Sort by score (descending) and return top k
+
         scored_docs.sort(key=lambda x: x[1], reverse=True)
         return [doc for doc, score in scored_docs[:k]]
+
 
 def build_rag_chain_from_files(pdf_file, txt_file, groq_api_key, enhanced_mode=True):
     """
