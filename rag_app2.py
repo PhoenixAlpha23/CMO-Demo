@@ -4,7 +4,7 @@ import os
 from groq import Groq
 from rag_chain2 import (
     build_rag_chain_with_model_choice, 
-    process_scheme_query_with_retry, 
+    process_unified_query, 
     get_optimized_query_suggestions,
     get_model_options,
     generate_audio_response,
@@ -269,7 +269,7 @@ def main():
                     st.session_state.last_query_time = time.time()
                     
                     # Use the optimized query processor
-                    result = process_scheme_query_with_retry(
+                    result = process_unified_query(
                         st.session_state.rag_chain, 
                         input_text
                     )
