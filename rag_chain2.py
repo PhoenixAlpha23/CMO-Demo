@@ -11,7 +11,7 @@ from langchain_groq import ChatGroq
 from langchain_community.retrievers import TFIDFRetriever
 from langchain.prompts import PromptTemplate
 import re
-from typing import List # Removed ClassVar
+from typing import List 
 from langchain.globals import set_verbose, get_verbose
 set_verbose(True) 
 
@@ -236,20 +236,18 @@ MARATHI_KEYWORDS = [
 class EnhancedTFIDFRetriever(TFIDFRetriever):
     """Enhanced TFIDF Retriever with keyword boosting for government schemes"""
 
-    # Removed ClassVar annotation. These are now regular class attributes.
     english_keywords: List[str] = ENGLISH_KEYWORDS
     marathi_keywords: List[str] = MARATHI_KEYWORDS
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Removed explicit assignments like self.english_keywords = EnhancedTFIDFRetriever.english_keywords
-        # as they are redundant when defined as class attributes. Python's MRO handles this.
 
     def get_relevant_documents(self, query, k=None):
         if k is None:
             k = self.k
 
-        base_docs = super().get_relevant_documents(query, k * 2)
+        # Pass k as a keyword argument to the super method
+        base_docs = super().get_relevant_documents(query, k=k * 2)
         scored_docs = []
 
         for doc in base_docs:
@@ -627,10 +625,6 @@ def get_model_options():
             "name": "Llama 3.1 8B (Fast & Efficient)", 
             "description": "Best for quick queries, lower rate limits, optimized for government schemes"
         },
-        "llama-3.1-70b-versatile": {
-            "name": "Llama 3.1 70B (Balanced)", 
-            "description": "Good balance of quality and speed for detailed scheme information"
-        },
         "llama-3.3-70b-versatile": {
             "name": "Llama 3.3 70B (High Quality)", 
             "description": "Best quality responses, detailed explanations, higher rate limits"
@@ -646,13 +640,7 @@ def get_tts_settings():
         "supported_languages": {
             'en': 'English',
             'hi': 'Hindi',
-            'mr': 'Marathi', 
-            'gu': 'Gujarati',
-            'ta': 'Tamil',
-            'te': 'Telugu',
-            'kn': 'Kannada',
-            'bn': 'Bengali'
-        },
+            'mr': 'Marathi'
         "cache_stats": {
             "audio_cache_size": len(_audio_cache),
             "text_cache_size": len(_query_cache)
