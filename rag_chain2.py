@@ -465,29 +465,25 @@ def extract_all_scheme_names(text):
 
     return sorted(list(all_matches))
 
-def process_scheme_query_with_retry(rag_chain, user_query, max_retries=3, enable_tts=False, autoplay=False):
-    """Updated to include unified government schemes prompt with enhanced response building"""
+def process_unified_query(rag_chain, user_query, max_retries=3, enable_tts=False, autoplay=False):
+    """
+    Process query using unified prompt with enhanced error handling and fallback
+    """
     # Check cache first
     query_hash = get_query_hash(user_query.lower().strip())
     cached_result = get_cached_result(query_hash)
+    
     if cached_result:
-        result_text = f"[Cached] {cached_result}"
+        result_text = cached_result
+        cache_status = "hit"
     else:
-        # Check for comprehensive queries
-        comprehensive_keywords = [
-            "all schemes", "list schemes", "complete list", "सर्व योजना", 
-            "total schemes", "how many schemes", "scheme names", "सर्व", "यादी"
-        ]
+        cache_status = "miss"
         
-        is_comprehensive_query = any(keyword in user_query.lower() for keyword in comprehensive_keywords)
-        
+        # Process with retry logic
         for attempt in range(max_retries):
             try:
-                if is_comprehensive_query:
-                    result_text = query_all_schemes_optimized(rag_chain)
-                else:
-                    result = rag_chain.invoke({"query": user_query})
-                    result_text = result.get('result', 'No results found.')
+                result = rag_chain.invoke({"query": user_query})
+                result_text = result.get('result', 'No results found.')
                 
                 # Apply fallback message if no relevant info found
                 if any(phrase in result_text.lower() for phrase in [
@@ -503,55 +499,39 @@ def process_scheme_query_with_retry(rag_chain, user_query, max_retries=3, enable
             except Exception as e:
                 error_str = str(e)
                 
-                if "rate_limit_exceeded" in error_str or "413" in error_str:
+                if "rate_limit" in error_str.lower() or "413" in error_str:
                     if attempt < max_retries - 1:
-                        wait_time = (attempt + 1) * 2  # Progressive backoff
+                        wait_time = (attempt + 1) * 2
                         time.sleep(wait_time)
                         continue
                     else:
-                        result_text = f"Rate limit reached. Please wait a moment and try again. You can also try a more specific question to reduce processing time."
+                        result_text = "Rate limit reached. Please wait and try again. For immediate help, contact 104/102 helpline numbers."
                         break
                 
-                elif "Request too large" in error_str:
-                    # Try with a simpler, shorter query
-                    if is_comprehensive_query and attempt == 0:
-                        simplified_query = "list main government schemes"
-                        try:
-                            result = rag_chain.invoke({"query": simplified_query})
-                            result_text = result.get('result', 'No results found.')
-                            result_text = f"[Simplified due to size limits] {result_text}"
-                            break
-                        except:
-                            pass
-                    
-                    result_text = "Query too large for current model. Try asking about specific schemes or categories instead of requesting all schemes at once."
+                elif "too large" in error_str.lower():
+                    result_text = "Query too complex. Please ask about specific schemes. For general help, contact 104/102 helpline numbers."
                     break
                 
                 else:
-                    result_text = f"Error processing query: {error_str}"
-                    break
-        else:
-            result_text = "Unable to process query after multiple attempts. Please try a simpler question."
+                    if attempt == max_retries - 1:
+                        result_text = f"Error processing query. For assistance, contact 104/102 helpline numbers."
+                    continue
     
     # Generate TTS if enabled
     audio_html = ""
     language_detected = "en"
-    cache_info = {"text_cache": "hit" if cached_result else "miss", "audio_cache": "disabled"}
+    cache_info = {"text_cache": cache_status, "audio_cache": "disabled"}
     
     if enable_tts and TTS_AVAILABLE:
-        # Clean result text for TTS (remove cache prefixes and formatting)
-        clean_text = re.sub(r'\[Cached\]|\[Simplified.*?\]', '', result_text).strip()
-        clean_text = re.sub(r'[✅ℹ️🔍]', '', clean_text)  # Remove emojis
+        # Clean text for TTS
+        clean_text = re.sub(r'[✅ℹ️🔍📋💫📞]', '', result_text).strip()
         
-        if len(clean_text) > 10:  # Only generate TTS for substantial text
+        if len(clean_text) > 10:
             audio_bytes, language_detected, audio_status = text_to_speech(clean_text, auto_detect=True)
             cache_info["audio_cache"] = audio_status
             
             if audio_bytes:
                 audio_html = get_audio_player_html(audio_bytes, autoplay=autoplay)
-    
-    # After getting result_text, enhance it
-    result_text = build_enhanced_response(result_text, user_query)
     
     return result_text, audio_html, language_detected, cache_info
 
