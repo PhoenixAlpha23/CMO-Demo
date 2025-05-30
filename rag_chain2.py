@@ -229,10 +229,53 @@ def play_audio_pygame(audio_bytes):
         print(f"Pygame audio error: {e}")
         return False
 
-def build_unified_rag_chain(pdf_file, txt_file, groq_api_key, model_choice="llama-3.1-8b-instant"):
+class EnhancedTFIDFRetriever(TFIDFRetriever):
+    """Enhanced TFIDF Retriever with keyword boosting for government schemes"""
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.english_keywords = ENGLISH_KEYWORDS
+        self.marathi_keywords = MARATHI_KEYWORDS
+    
+    def get_relevant_documents(self, query, k=None):
+        """Enhanced retrieval with keyword boosting"""
+        if k is None:
+            k = self.k
+        
+        # Get base documents
+        base_docs = super().get_relevant_documents(query, k * 2)  # Get more initially
+        
+        # Score documents based on keyword presence
+        scored_docs = []
+        for doc in base_docs:
+            score = 0
+            content = doc.page_content.lower()
+            
+            # Boost score for English keywords
+            for keyword in self.english_keywords:
+                if keyword.lower() in content:
+                    score += 2
+            
+            # Boost score for Marathi keywords
+            for keyword in self.marathi_keywords:
+                if keyword in doc.page_content:  # Case sensitive for Marathi
+                    score += 3
+            
+            # Boost for scheme-related terms
+            scheme_terms = ['scheme', 'yojana', 'योजना', 'कार्यक्रम', 'सेवा', 'programme', 'mission']
+            for term in scheme_terms:
+                if term in content:
+                    score += 1
+            
+            scored_docs.append((doc, score))
+        
+        # Sort by score (descending) and return top k
+        scored_docs.sort(key=lambda x: x[1], reverse=True)
+        return [doc for doc, score in scored_docs[:k]]
+
+def build_rag_chain_from_files(pdf_file, txt_file, groq_api_key, enhanced_mode=True):
     """
-    Build a RAG chain with unified government schemes prompt.
-    Updated to use single comprehensive prompt for all queries.
+    Build a rate-limit optimized RAG chain with unified government schemes prompt.
     """
     pdf_path = txt_path = None
     if not (pdf_file or txt_file):
@@ -259,49 +302,41 @@ def build_unified_rag_chain(pdf_file, txt_file, groq_api_key, model_choice="llam
         if not all_docs:
             raise ValueError("No valid documents loaded.")
 
-        # Optimized chunking strategy for government schemes
-        # Smaller chunks with good overlap to preserve scheme details
-        splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000,  # Increased for better context preservation
-            chunk_overlap=300,  # Higher overlap to avoid splitting scheme info
-            separators=[
-                "\n\n",     # Paragraph breaks
-                "\n",       # Line breaks
-                "।",        # Devanagari sentence end
-                ".",        # English sentence end
-                "?", "!",   # Question/exclamation
-                ";", ","    # Clauses
-            ]
-        )
+        # Enhanced chunking for government schemes
+        if enhanced_mode:
+            splitter = RecursiveCharacterTextSplitter(
+                chunk_size=1000,  # Increased for better context preservation
+                chunk_overlap=300,  # Higher overlap to avoid splitting scheme info
+                separators=[
+                    "\n\n",     # Paragraph breaks
+                    "\n",       # Line breaks
+                    "।",        # Devanagari sentence end
+                    ".",        # English sentence end
+                    "?", "!",   # Question/exclamation
+                    ";", ","    # Clauses
+                ]
+            )
+        else:
+            splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=150)
         
         splits = splitter.split_documents(all_docs)
         
-        # Adjust retrieval parameters based on model
-        if model_choice == "llama-3.1-8b-instant":
-            k_chunks = 8  # Fewer chunks for faster processing
-            max_tokens = 1800
-        elif model_choice == "llama-3.1-70b-versatile":
-            k_chunks = 12
-            max_tokens = 2500
-        else:  # llama-3.3-70b-versatile
-            k_chunks = 15
-            max_tokens = 3000
+        # Use enhanced retriever with keyword boosting
+        max_chunks = 15 if enhanced_mode else 20
+        if enhanced_mode:
+            retriever = EnhancedTFIDFRetriever.from_documents(splits, k=min(max_chunks, len(splits)))
+        else:
+            retriever = TFIDFRetriever.from_documents(splits, k=min(max_chunks, len(splits)))
 
-        # Create optimized retriever
-        retriever = TFIDFRetriever.from_documents(
-            splits, 
-            k=min(k_chunks, len(splits))
-        )
-
-        # Initialize LLM with optimized settings
+        # Use smaller, faster model for efficiency
         llm = ChatGroq(
             api_key=groq_api_key, 
-            model=model_choice,
-            temperature=0.1,  # Low temperature for consistent, factual responses
-            max_tokens=max_tokens
+            model="llama-3.1-8b-instant",  # Faster, cheaper model
+            temperature=0.1,  # Low temperature for consistent responses
+            max_tokens=2000  # Limit output tokens
         )
         
-        # Use the unified government schemes prompt
+        # Use unified government schemes prompt
         unified_prompt = PromptTemplate(
             template=GOVERNMENT_SCHEMES_PROMPT,
             input_variables=["context", "question"]
@@ -318,20 +353,88 @@ def build_unified_rag_chain(pdf_file, txt_file, groq_api_key, model_choice="llam
     except Exception as e:
         raise ValueError(f"Failed to build RAG chain: {str(e)}")
     finally:
-        # Cleanup temporary files
         if pdf_path and os.path.exists(pdf_path):
             os.unlink(pdf_path)
         if txt_path and os.path.exists(txt_path):
             os.unlink(txt_path)
 
-# Legacy function for backward compatibility
-def build_rag_chain_from_files(pdf_file, txt_file, groq_api_key, enhanced_mode=True):
-    """Legacy function - redirects to unified version"""
-    return build_unified_rag_chain(pdf_file, txt_file, groq_api_key)
-
 def build_rag_chain_with_model_choice(pdf_file, txt_file, groq_api_key, model_choice="llama-3.1-8b-instant", enhanced_mode=True):
-    """Legacy function - redirects to unified version"""
-    return build_unified_rag_chain(pdf_file, txt_file, groq_api_key, model_choice)
+    """
+    Build RAG chain with selectable model and unified government schemes prompt.
+    """
+    # Same as build_rag_chain_from_files but with model parameter
+    pdf_path = txt_path = None
+    if not (pdf_file or txt_file):
+        raise ValueError("At least one file (PDF or TXT) must be provided.")
+    
+    try:
+        if pdf_file:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_pdf:
+                tmp_pdf.write(pdf_file.read())
+                pdf_path = tmp_pdf.name
+        if txt_file:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp_txt:
+                tmp_txt.write(txt_file.read())
+                txt_path = tmp_txt.name
+
+        all_docs = []
+        if pdf_path:
+            all_docs += PyPDFLoader(pdf_path).load()
+        if txt_path:
+            all_docs += TextLoader(txt_path, encoding="utf-8").load()
+        
+        if not all_docs:
+            raise ValueError("No valid documents loaded.")
+
+        # Adjust parameters based on model
+        if model_choice == "llama-3.1-8b-instant":
+            chunk_size, max_chunks, max_tokens = 1000, 12, 1800
+        elif model_choice == "llama-3.1-70b-versatile":
+            chunk_size, max_chunks, max_tokens = 1000, 18, 2500
+        else:  # llama-3.3-70b-versatile
+            chunk_size, max_chunks, max_tokens = 1200, 20, 3000
+
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=chunk_size,
+            chunk_overlap=300,
+            separators=["\n\n", "\n", "।", ".", "!", "?", ",", " ", ""]
+        )
+        splits = splitter.split_documents(all_docs)
+        
+        # Use enhanced retriever with keyword boosting
+        if enhanced_mode:
+            retriever = EnhancedTFIDFRetriever.from_documents(splits, k=min(max_chunks, len(splits)))
+        else:
+            retriever = TFIDFRetriever.from_documents(splits, k=min(max_chunks, len(splits)))
+
+        llm = ChatGroq(
+            api_key=groq_api_key, 
+            model=model_choice,
+            temperature=0.1,
+            max_tokens=max_tokens
+        )
+        
+        # Use unified government schemes prompt
+        unified_prompt = PromptTemplate(
+            template=GOVERNMENT_SCHEMES_PROMPT,
+            input_variables=["context", "question"]
+        )
+        
+        return RetrievalQA.from_chain_type(
+            llm=llm,
+            chain_type="stuff",
+            retriever=retriever,
+            return_source_documents=False,
+            chain_type_kwargs={"prompt": unified_prompt}
+        )
+            
+    except Exception as e:
+        raise ValueError(f"Failed to build RAG chain: {str(e)}")
+    finally:
+        if pdf_path and os.path.exists(pdf_path):
+            os.unlink(pdf_path)
+        if txt_path and os.path.exists(txt_path):
+            os.unlink(txt_path)
 
 def extract_all_scheme_names(text):
     """Enhanced scheme name extraction with better patterns"""
@@ -362,25 +465,29 @@ def extract_all_scheme_names(text):
 
     return sorted(list(all_matches))
 
-def process_unified_query(rag_chain, user_query, max_retries=3, enable_tts=False, autoplay=False):
-    """
-    Process query using unified prompt with enhanced error handling and fallback
-    """
+def process_scheme_query_with_retry(rag_chain, user_query, max_retries=3, enable_tts=False, autoplay=False):
+    """Updated to include unified government schemes prompt with enhanced response building"""
     # Check cache first
     query_hash = get_query_hash(user_query.lower().strip())
     cached_result = get_cached_result(query_hash)
-    
     if cached_result:
-        result_text = cached_result
-        cache_status = "hit"
+        result_text = f"[Cached] {cached_result}"
     else:
-        cache_status = "miss"
+        # Check for comprehensive queries
+        comprehensive_keywords = [
+            "all schemes", "list schemes", "complete list", "सर्व योजना", 
+            "total schemes", "how many schemes", "scheme names", "सर्व", "यादी"
+        ]
         
-        # Process with retry logic
+        is_comprehensive_query = any(keyword in user_query.lower() for keyword in comprehensive_keywords)
+        
         for attempt in range(max_retries):
             try:
-                result = rag_chain.invoke({"query": user_query})
-                result_text = result.get('result', 'No results found.')
+                if is_comprehensive_query:
+                    result_text = query_all_schemes_optimized(rag_chain)
+                else:
+                    result = rag_chain.invoke({"query": user_query})
+                    result_text = result.get('result', 'No results found.')
                 
                 # Apply fallback message if no relevant info found
                 if any(phrase in result_text.lower() for phrase in [
@@ -396,46 +503,111 @@ def process_unified_query(rag_chain, user_query, max_retries=3, enable_tts=False
             except Exception as e:
                 error_str = str(e)
                 
-                if "rate_limit" in error_str.lower() or "413" in error_str:
+                if "rate_limit_exceeded" in error_str or "413" in error_str:
                     if attempt < max_retries - 1:
-                        wait_time = (attempt + 1) * 2
+                        wait_time = (attempt + 1) * 2  # Progressive backoff
                         time.sleep(wait_time)
                         continue
                     else:
-                        result_text = "Rate limit reached. Please wait and try again. For immediate help, contact 104/102 helpline numbers."
+                        result_text = f"Rate limit reached. Please wait a moment and try again. You can also try a more specific question to reduce processing time."
                         break
                 
-                elif "too large" in error_str.lower():
-                    result_text = "Query too complex. Please ask about specific schemes. For general help, contact 104/102 helpline numbers."
+                elif "Request too large" in error_str:
+                    # Try with a simpler, shorter query
+                    if is_comprehensive_query and attempt == 0:
+                        simplified_query = "list main government schemes"
+                        try:
+                            result = rag_chain.invoke({"query": simplified_query})
+                            result_text = result.get('result', 'No results found.')
+                            result_text = f"[Simplified due to size limits] {result_text}"
+                            break
+                        except:
+                            pass
+                    
+                    result_text = "Query too large for current model. Try asking about specific schemes or categories instead of requesting all schemes at once."
                     break
                 
                 else:
-                    if attempt == max_retries - 1:
-                        result_text = f"Error processing query. For assistance, contact 104/102 helpline numbers."
-                    continue
+                    result_text = f"Error processing query: {error_str}"
+                    break
+        else:
+            result_text = "Unable to process query after multiple attempts. Please try a simpler question."
     
     # Generate TTS if enabled
     audio_html = ""
     language_detected = "en"
-    cache_info = {"text_cache": cache_status, "audio_cache": "disabled"}
+    cache_info = {"text_cache": "hit" if cached_result else "miss", "audio_cache": "disabled"}
     
     if enable_tts and TTS_AVAILABLE:
-        # Clean text for TTS
-        clean_text = re.sub(r'[✅ℹ️🔍📋💫📞]', '', result_text).strip()
+        # Clean result text for TTS (remove cache prefixes and formatting)
+        clean_text = re.sub(r'\[Cached\]|\[Simplified.*?\]', '', result_text).strip()
+        clean_text = re.sub(r'[✅ℹ️🔍]', '', clean_text)  # Remove emojis
         
-        if len(clean_text) > 10:
+        if len(clean_text) > 10:  # Only generate TTS for substantial text
             audio_bytes, language_detected, audio_status = text_to_speech(clean_text, auto_detect=True)
             cache_info["audio_cache"] = audio_status
             
             if audio_bytes:
                 audio_html = get_audio_player_html(audio_bytes, autoplay=autoplay)
     
+    # After getting result_text, enhance it
+    result_text = build_enhanced_response(result_text, user_query)
+    
     return result_text, audio_html, language_detected, cache_info
 
-# Keep legacy functions for compatibility
 def query_all_schemes_optimized(rag_chain):
-    """Legacy function - now uses unified query processing"""
-    return process_unified_query(rag_chain, "List all government schemes with their details")[0]
+    """
+    Optimized scheme extractor with multi-pass strategy, minimal API load, and pattern matching.
+    """
+    priority_queries = [
+        "list of government schemes with names",
+        "सरकारी योजना नावे सांगा",
+        "welfare and benefit schemes by the government",
+    ]
+    
+    all_extracted_schemes = set()
+    seen_texts = set()
+    
+    for i, query in enumerate(priority_queries):
+        try:
+            if i > 0:
+                time.sleep(1)  # rate limit protection
+            
+            result = rag_chain.invoke({"query": query})
+            content = result.get('result', '') if isinstance(result, dict) else str(result)
+            
+            if content and content not in seen_texts and len(content.strip()) > 30:
+                seen_texts.add(content)
+                schemes = extract_schemes_from_text(content)
+                all_extracted_schemes.update(schemes)
+        
+        except Exception as e:
+            if "rate_limit" in str(e).lower():
+                time.sleep(3)
+                continue
+            continue
+
+    # Fallback if not enough schemes found
+    if len(all_extracted_schemes) < 5:
+        try:
+            result = rag_chain.invoke({"query": "List all government schemes mentioned in the documents."})
+            content = result.get('result', '') if isinstance(result, dict) else str(result)
+            fallback_schemes = extract_schemes_from_text(content)
+            all_extracted_schemes.update(fallback_schemes)
+        except:
+            pass
+
+    if not all_extracted_schemes:
+        return "No government schemes were confidently extracted. Please try refining your query."
+
+    schemes_list = sorted(list(all_extracted_schemes))
+    response = f"✅ Found {len(schemes_list)} schemes:\n\n"
+    for i, scheme in enumerate(schemes_list, 1):
+        response += f"{i}. {scheme}\n"
+
+    response += "\n\nℹ️ Note: This list is extracted using pattern recognition and RAG-based queries. Some names may be partial or inferred."
+
+    return response
 
 def extract_schemes_from_text(content):
     """Helper function to extract schemes from text content"""
@@ -512,6 +684,47 @@ def clear_text_cache():
     global _query_cache
     _query_cache.clear()
     return "Text cache cleared successfully"
+def generate_audio_response(text, language=None, lang_preference=None, speed=1.0, auto_detect=True):
+    """
+    Generate audio response for given text - updated to match rag_app.py expectations
+    Returns: (audio_data, detected_lang, cache_hit) tuple or dict based on usage
+    """
+    if not TTS_AVAILABLE:
+        return None, 'en', False
+    
+    try:
+        # Handle parameter compatibility
+        target_lang = language or lang_preference or 'auto'
+        
+        # Clean text for better TTS
+        clean_text = re.sub(r'\[.*?\]', '', text)  # Remove bracketed content
+        clean_text = re.sub(r'[✅ℹ️🔍⚠️]', '', clean_text)  # Remove emojis
+        clean_text = re.sub(r'\s+', ' ', clean_text).strip()  # Clean whitespace
+        
+        if len(clean_text) < 5:
+            return None, target_lang, False
+        
+        # Auto-detect language if needed
+        if target_lang == 'auto' or auto_detect:
+            detected_lang = detect_language(clean_text)
+        else:
+            detected_lang = target_lang
+        
+        # Generate TTS with caching
+        audio_bytes, final_lang, cache_status = text_to_speech(
+            clean_text, 
+            lang=detected_lang, 
+            auto_detect=auto_detect,
+            speed=speed
+        )
+        
+        cache_hit = cache_status == 'cached'
+        
+        return audio_bytes, final_lang, cache_hit
+            
+    except Exception as e:
+        print(f"Error generating audio: {str(e)}")
+        return None, target_lang, False
 
 def extract_scheme_details(text, scheme_name):
     """Enhanced scheme details extraction for bilingual content"""
