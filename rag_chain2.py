@@ -12,6 +12,9 @@ from langchain_community.retrievers import TFIDFRetriever
 from langchain.prompts import PromptTemplate
 import re
 from typing import ClassVar, List
+from langchain.globals import set_verbose, get_verbose
+set_verbose(True) 
+
 # New imports for TTS and language detection
 try:
     from gtts import gTTS
