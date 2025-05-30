@@ -14,7 +14,9 @@ import re
 from typing import List 
 from langchain.globals import set_verbose, get_verbose
 set_verbose(True) 
+import sys
 
+sys.setrecursionlimit(5000)
 # New imports for TTS and language detection
 try:
     from gtts import gTTS
@@ -575,7 +577,7 @@ def query_all_schemes_optimized(rag_chain):
     if len(all_extracted_schemes) < 5:
         try:
             result = rag_chain.invoke({"query": "List all government schemes mentioned in the documents."})
-            content = result.get('result', '') if isinstance(result, dict) else str(result)
+            content = result.get('result', '') if isinstance(result, dict) else str(content)
             fallback_schemes = extract_schemes_from_text(content)
             all_extracted_schemes.update(fallback_schemes)
         except:
