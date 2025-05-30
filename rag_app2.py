@@ -4,11 +4,11 @@ import os
 from groq import Groq
 from rag_chain2 import (
     build_rag_chain_with_model_choice, 
-    process_unified_query, 
     get_optimized_query_suggestions,
     get_model_options,
     generate_audio_response,
-    get_audio_cache_stats
+    get_audio_cache_stats,
+    clear_audio_cache
 )
 import tempfile
 import pandas as pd
@@ -89,6 +89,52 @@ def safe_get_cache_stats():
         # If the function fails entirely, return default values
         st.warning(f"Cache stats unavailable: {e}")
         return {"total": 0, "hit_rate": 0.0}
+
+def process_query_with_rag_chain(rag_chain, user_query):
+    """
+    Process query using the updated rag_chain2.py functions
+    This replaces the old process_scheme_query_with_retry function
+    """
+    try:
+        # Check for comprehensive queries that need special handling
+        comprehensive_keywords = [
+            "all schemes", "list schemes", "complete list", "सर्व योजना", 
+            "total schemes", "how many schemes", "scheme names", "सर्व", "यादी"
+        ]
+        
+        is_comprehensive_query = any(keyword in user_query.lower() for keyword in comprehensive_keywords)
+        
+        if is_comprehensive_query:
+            # For comprehensive queries, we need to use the optimized approach
+            # Since query_all_schemes_optimized is not directly available, we'll use the regular chain
+            result = rag_chain.invoke({"query": f"List all government schemes mentioned in the documents: {user_query}"})
+        else:
+            result = rag_chain.invoke({"query": user_query})
+        
+        # Extract result text
+        if isinstance(result, dict):
+            result_text = result.get('result', 'No results found.')
+        else:
+            result_text = str(result)
+        
+        # Apply fallback message if no relevant info found
+        if any(phrase in result_text.lower() for phrase in [
+            "no information", "not found", "cannot find", "not available",
+            "माहिती उपलब्ध नाही", "सापडले नाही"
+        ]):
+            result_text += "\n\nFor more details contact on 104/102 helpline numbers."
+        
+        return result_text
+        
+    except Exception as e:
+        error_str = str(e)
+        
+        if "rate_limit_exceeded" in error_str or "413" in error_str:
+            return "Rate limit reached. Please wait a moment and try again. You can also try a more specific question to reduce processing time."
+        elif "Request too large" in error_str:
+            return "Query too large for current model. Try asking about specific schemes or categories instead of requesting all schemes at once."
+        else:
+            return f"Error processing query: {error_str}"
 
 def main():
     st.set_page_config(page_title="CMRF RAG Assistant", layout="wide")
@@ -173,7 +219,6 @@ def main():
             
             if st.sidebar.button("🗑️ Clear Audio Cache"):
                 try:
-                    from rag_chain2 import clear_audio_cache
                     clear_audio_cache()
                     st.sidebar.success("Audio cache cleared!")
                     st.rerun()
@@ -268,17 +313,11 @@ def main():
                 with st.spinner("🔍 Processing query..."):
                     st.session_state.last_query_time = time.time()
                     
-                    # Use the optimized query processor
-                    result = process_unified_query(
+                    # Use the updated query processor
+                    assistant_reply = process_query_with_rag_chain(
                         st.session_state.rag_chain, 
                         input_text
                     )
-                    
-                    # Handle both string and tuple responses
-                    if isinstance(result, tuple):
-                        assistant_reply = result[0] if result else "No response received"
-                    else:
-                        assistant_reply = result if result else "No response received"
                     
                     # Ensure we have a string
                     if not isinstance(assistant_reply, str):
@@ -313,22 +352,12 @@ def main():
                 # Generate and display TTS audio
                 with st.spinner("🔊 Generating voice response..."):
                     try:
-                        # Check if generate_audio_response supports speed parameter
-                        import inspect
-                        audio_func_params = inspect.signature(generate_audio_response).parameters
-                        
-                        if 'speed' in audio_func_params:
-                            result = generate_audio_response(
-                                clean_reply, 
-                                speed=tts_speed,
-                                lang_preference=voice_lang_pref
-                            )
-                        else:
-                            # Fallback without speed parameter
-                            result = generate_audio_response(
-                                clean_reply, 
-                                lang_preference=voice_lang_pref
-                            )
+                        # Use the generate_audio_response function from rag_chain2.py
+                        result = generate_audio_response(
+                            clean_reply, 
+                            speed=tts_speed,
+                            lang_preference=voice_lang_pref
+                        )
                         
                         # Handle different return formats
                         if isinstance(result, dict):
@@ -355,7 +384,7 @@ def main():
                             lang_display = lang_names.get(detected_lang, detected_lang)
                             
                             cache_indicator = "🧠 (Cached)" if cache_hit else "🆕 (Generated)"
-                            speed_info = f" | Speed: {tts_speed}x" if 'speed' in audio_func_params else ""
+                            speed_info = f" | Speed: {tts_speed}x"
                             st.info(f"🔊 Voice: {lang_display}{speed_info} | {cache_indicator}")
                             
                             # Create and display audio player
@@ -420,32 +449,18 @@ def main():
                         
                         try:
                             with st.spinner("Generating audio..."):
-                                # Check if generate_audio_response supports speed parameter
-                                import inspect
-                                audio_func_params = inspect.signature(generate_audio_response).parameters
-                                
-                                if 'speed' in audio_func_params:
-                                    result = generate_audio_response(
-                                        clean_text,
-                                        speed=tts_speed,
-                                        lang_preference=voice_lang_pref
-                                    )
-                                else:
-                                    # Fallback without speed parameter
-                                    result = generate_audio_response(
-                                        clean_text,
-                                        lang_preference=voice_lang_pref
-                                    )
+                                result = generate_audio_response(
+                                    clean_text,
+                                    speed=tts_speed,
+                                    lang_preference=voice_lang_pref
+                                )
                                 
                                 # Handle different return formats
                                 if isinstance(result, dict):
-                                    # If function returns a dictionary
                                     audio_data = result.get('audio_data')
                                 elif isinstance(result, tuple) and len(result) >= 1:
-                                    # If function returns a tuple
                                     audio_data = result[0]
                                 else:
-                                    # If function returns just audio_data
                                     audio_data = result
                                     
                             if audio_data:
