@@ -322,7 +322,11 @@ def build_rag_chain_from_files(pdf_file, txt_file, groq_api_key, enhanced_mode=T
         # Use enhanced retriever with keyword boosting
         max_chunks = 15 if enhanced_mode else 20
         if enhanced_mode:
-            retriever = EnhancedTFIDFRetriever.from_documents(splits, k=min(max_chunks, len(splits)))
+            retriever = EnhancedTFIDFRetriever.from_documents(splits,
+                                                              k=min(max_chunks, len(splits)),
+                                                              english_keywords=ENGLISH_KEYWORDS,
+                                                              marathi_keywords=MARATHI_KEYWORDS)
+
         else:
             retriever = TFIDFRetriever.from_documents(splits, k=min(max_chunks, len(splits)))
 
