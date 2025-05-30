@@ -11,14 +11,9 @@ from langchain_groq import ChatGroq
 from langchain_community.retrievers import TFIDFRetriever
 from langchain.prompts import PromptTemplate
 import re
-from typing import List # Corrected import, removed ClassVar
 from langchain.globals import set_verbose, get_verbose
-import sys # Import sys module
-
 set_verbose(True) 
 
-# Increase the recursion limit - this helps with deep internal calls in libraries like scikit-learn
-sys.setrecursionlimit(5000) 
 
 # New imports for TTS and language detection
 try:
@@ -39,38 +34,6 @@ _cache_max_size = 50
 # Audio cache for TTS
 _audio_cache = {}
 _audio_cache_max_size = 20
-
-# UNIFIED GOVERNMENT SCHEMES PROMPT - Re-added from your desired new logic
-GOVERNMENT_SCHEMES_PROMPT = """You are a Knowledge Assistant designed for answering questions specifically from the knowledge base provided to you.
-
-Your task is as follows: give a detailed response for user query in the user language (eg. what are some schemes? --> Here is a list of some schemes)
-
-Ensure your response follows these styles and tone in your response:
-* Use direct, everyday language
-* Personal and human
-* Favour detailed responses, with mentions of websites and headings such as description, eligibility or उद्देशः, अंतर्भूत घटकः
-* In case no relevant information is found, default your response to a phrase like "For more details contact on 104/102 helpline numbers."
-
-Your goal is to achieve the following: help a citizen understand about the schemes and its eligibility criteria.
-
-Here is the content you will work with: {context}
-
-Question: {question}
-
-Now perform the task as instructed above.
-
-Answer:"""
-
-# Global constants for keywords - Re-added from your desired new logic
-ENGLISH_KEYWORDS = [
-    "Description:", "Eligibility:", "Target Group:", "Inclusion Criteria:",
-    "Exclusion Criteria:", "Benefits:", "Helpline:"
-]
-
-MARATHI_KEYWORDS = [
-    "उद्देशः", "अंतर्भूत घटक", "हेल्प लाईन क्र", "योजना", "लाभार्थी", 
-    "सेवा", "हेल्पलाइन", "टोल फ्री नंबर", "हेल्पलाईनवर", "अधिक माहितीसाठी", "अधिक", " माहिती"
-]
 
 def get_query_hash(query_text):
     """Generate a hash for caching queries"""
@@ -101,8 +64,7 @@ def cache_audio(audio_hash, audio_data):
         # Remove oldest entry
         oldest_key = next(iter(_audio_cache))
         del _audio_cache[oldest_key]
-    _audio_cache[audio_hash] = audio_data # Corrected: use audio_hash as key
-    # Note: The previous version had `_audio_cache[oldest_key] = audio_data` which was a bug.
+    _audio_cache[audio_hash] = audio_data
 
 def get_cached_audio(audio_hash):
     """Get cached audio if available"""
@@ -244,53 +206,9 @@ def play_audio_pygame(audio_bytes):
         print(f"Pygame audio error: {e}")
         return False
 
-# EnhancedTFIDFRetriever class - Re-added from your desired new logic
-class EnhancedTFIDFRetriever(TFIDFRetriever):
-    """Enhanced TFIDF Retriever with keyword boosting for government schemes"""
-
-    english_keywords: List[str] = ENGLISH_KEYWORDS
-    marathi_keywords: List[str] = MARATHI_KEYWORDS
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-    def get_relevant_documents(self, query, k=None):
-        if k is None:
-            k = self.k
-
-        # Pass k as a keyword argument to the super method
-        base_docs = super().get_relevant_documents(query, k=k * 2)
-        scored_docs = []
-
-        for doc in base_docs:
-            score = 0
-            content = doc.page_content.lower()
-
-            # Boost for English keywords
-            for keyword in self.english_keywords: 
-                if keyword.lower() in content:
-                    score += 2
-
-            # Boost for Marathi keywords
-            for keyword in self.marathi_keywords: 
-                if keyword in doc.page_content:
-                    score += 3
-
-            # Boost for common scheme terms
-            scheme_terms = ['scheme', 'yojana', 'योजना', 'कार्यक्रम', 'सेवा', 'programme', 'mission']
-            for term in scheme_terms:
-                if term in content:
-                    score += 1
-
-            scored_docs.append((doc, score))
-
-        scored_docs.sort(key=lambda x: x[1], reverse=True)
-        return [doc for doc, score in scored_docs[:k]]
-
-
 def build_rag_chain_from_files(pdf_file, txt_file, groq_api_key, enhanced_mode=True):
     """
-    Build a rate-limit optimized RAG chain with unified government schemes prompt.
+    Build a rate-limit optimized RAG chain.
     """
     pdf_path = txt_path = None
     if not (pdf_file or txt_file):
@@ -317,129 +235,57 @@ def build_rag_chain_from_files(pdf_file, txt_file, groq_api_key, enhanced_mode=T
         if not all_docs:
             raise ValueError("No valid documents loaded.")
 
-        # Enhanced chunking for government schemes (using parameters from your previous attempt)
+        # Optimized chunking for token limits
         if enhanced_mode:
             splitter = RecursiveCharacterTextSplitter(
-                chunk_size=1000,  # Increased for better context preservation
-                chunk_overlap=300,  # Higher overlap to avoid splitting scheme info
-                separators=[
-                    "\n\n",     # Paragraph breaks
-                    "\n",       # Line breaks
-                    "।",        # Devanagari sentence end
-                    ".",        # English sentence end
-                    "?", "!",   # Question/exclamation
-                    ";", ","    # Clauses
-                ]
+                chunk_size=600,  # Smaller chunks to avoid token limits
+                chunk_overlap=200,
+                separators=["\n\n", "\n", ".", "!", "?", ",", " ", ""]
             )
         else:
             splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=150)
         
         splits = splitter.split_documents(all_docs)
         
-        # Use enhanced retriever with keyword boosting when enhanced_mode is True
+        # Limit retrieval to avoid token overflow
         max_chunks = 15 if enhanced_mode else 20
-        if enhanced_mode:
-            retriever = EnhancedTFIDFRetriever.from_documents(splits, k=min(max_chunks, len(splits)))
-        else:
-            retriever = TFIDFRetriever.from_documents(splits, k=min(max_chunks, len(splits)))
+        retriever = TFIDFRetriever.from_documents(splits, k=min(max_chunks, len(splits)))
 
         # Use smaller, faster model for efficiency
         llm = ChatGroq(
             api_key=groq_api_key, 
             model="llama-3.1-8b-instant",  # Faster, cheaper model
-            temperature=0.1,  # Low temperature for consistent responses
+            temperature=0.1,
             max_tokens=2000  # Limit output tokens
         )
         
-        # Use unified government schemes prompt
-        unified_prompt = PromptTemplate(
-            template=GOVERNMENT_SCHEMES_PROMPT,
-            input_variables=["context", "question"]
-        )
-        
-        return RetrievalQA.from_chain_type(
-            llm=llm,
-            chain_type="stuff",
-            retriever=retriever,
-            return_source_documents=False,
-            chain_type_kwargs={"prompt": unified_prompt}
-        )
-            
-    except Exception as e:
-        raise ValueError(f"Failed to build RAG chain: {str(e)}")
-    finally:
-        if pdf_path and os.path.exists(pdf_path):
-            os.unlink(pdf_path)
-        if txt_path and os.path.exists(txt_path):
-            os.unlink(txt_path)
-
-def build_rag_chain_with_model_choice(pdf_file, txt_file, groq_api_key, model_choice="llama-3.1-8b-instant", enhanced_mode=True):
-    """
-    Build RAG chain with selectable model and unified government schemes prompt.
-    """
-    pdf_path = txt_path = None
-    if not (pdf_file or txt_file):
-        raise ValueError("At least one file (PDF or TXT) must be provided.")
-    
-    try:
-        if pdf_file:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_pdf:
-                tmp_pdf.write(pdf_file.read())
-                pdf_path = tmp_pdf.name
-        if txt_file:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp_txt:
-                tmp_txt.write(txt_file.read())
-                txt_path = tmp_txt.name
-
-        all_docs = []
-        if pdf_path:
-            all_docs += PyPDFLoader(pdf_path).load()
-        if txt_path:
-            all_docs += TextLoader(txt_path, encoding="utf-8").load()
-        
-        if not all_docs:
-            raise ValueError("No valid documents loaded.")
-
-        # Adjust parameters based on model (using parameters from your previous attempt)
-        if model_choice == "llama-3.1-8b-instant":
-            chunk_size, max_chunks, max_tokens = 1000, 12, 1800
-        elif model_choice == "llama-3.1-70b-versatile":
-            chunk_size, max_chunks, max_tokens = 1000, 18, 2500
-        else:  # llama-3.3-70b-versatile
-            chunk_size, max_chunks, max_tokens = 1200, 20, 3000
-
-        splitter = RecursiveCharacterTextSplitter(
-            chunk_size=chunk_size,
-            chunk_overlap=300,
-            separators=["\n\n", "\n", "।", ".", "!", "?", ",", " ", ""]
-        )
-        splits = splitter.split_documents(all_docs)
-        
-        # Use enhanced retriever with keyword boosting when enhanced_mode is True
+        # Optimized prompt to reduce token usage
         if enhanced_mode:
-            retriever = EnhancedTFIDFRetriever.from_documents(splits, k=min(max_chunks, len(splits)))
-        else:
-            retriever = TFIDFRetriever.from_documents(splits, k=min(max_chunks, len(splits)))
+            # Custom prompt for enhanced mode
+            custom_prompt = PromptTemplate(
+                template="""You are a well-informed helpline assistant used for answering citizenn queries based on the context,
+                answer concisely.For list of schemes:Extract all schemes based upon domains, such as healthcare, education, welfare, etc.
+                Use the following formats for listing schemes:
+                Numbered list (e.g., 1. Digital India Programme)
+                Bullet point (e.g., • Skill India Mission)
+                Dash point (e.g., - Startup India Initiative)
+                Context: {context}
+                Question: {question}
+                Answer:""",
+                input_variables=["context", "question"]
+            )
 
-        llm = ChatGroq(
-            api_key=groq_api_key, 
-            model=model_choice,
-            temperature=0.1,
-            max_tokens=max_tokens
-        )
-        
-        # Use unified government schemes prompt
-        unified_prompt = PromptTemplate(
-            template=GOVERNMENT_SCHEMES_PROMPT,
-            input_variables=["context", "question"]
-        )
+        else:
+            custom_prompt = None
+
+        chain_kwargs = {"prompt": custom_prompt} if custom_prompt else {}
         
         return RetrievalQA.from_chain_type(
             llm=llm,
             chain_type="stuff",
             retriever=retriever,
             return_source_documents=False,
-            chain_type_kwargs={"prompt": unified_prompt}
+            chain_type_kwargs=chain_kwargs
         )
             
     except Exception as e:
@@ -477,13 +323,6 @@ def process_scheme_query_with_retry(rag_chain, user_query, max_retries=3, enable
                     result = rag_chain.invoke({"query": user_query})
                     result_text = result.get('result', 'No results found.')
                 
-                # Apply fallback message if no relevant info found (from your original prompt logic)
-                if any(phrase in result_text.lower() for phrase in [
-                    "no information", "not found", "cannot find", "not available",
-                    "माहिती उपलब्ध नाही", "सापडले नाही"
-                ]):
-                    result_text += "\n\nFor more details contact on 104/102 helpline numbers."
-
                 # Cache successful result
                 cache_result(query_hash, result_text)
                 break
@@ -518,7 +357,7 @@ def process_scheme_query_with_retry(rag_chain, user_query, max_retries=3, enable
                 else:
                     result_text = f"Error processing query: {error_str}"
                     break
-        else: # This else block executes if the loop completes without a 'break'
+        else:
             result_text = "Unable to process query after multiple attempts. Please try a simpler question."
     
     # Generate TTS if enabled
@@ -541,7 +380,6 @@ def process_scheme_query_with_retry(rag_chain, user_query, max_retries=3, enable
     return result_text, audio_html, language_detected, cache_info
 
 def extract_all_scheme_names(text):
-    """Enhanced scheme name extraction with better patterns"""
     # Normalize text
     text = re.sub(r'\s+', ' ', text)  # collapse all whitespace
     text = text.replace('\n', ' ')    # remove newline breaks
@@ -624,21 +462,15 @@ def extract_schemes_from_text(content):
 
 def get_optimized_query_suggestions():
     """
-    Suggestions optimized for unified prompt
+    Rate-limit friendly query suggestions.
     """
     return [
-        "List all government schemes",
-        "सरकारी योजनांची यादी (List of government schemes)",
-        "Health schemes and eligibility",
-        "आरोग्य योजना आणि पात्रता (Health schemes and eligibility)",
-        "Education schemes details",
-        "शिक्षण योजना तपशील (Education scheme details)",
+        "List main government schemes",  # Shorter, more focused
+        "सरकारी योजना नावे (Government scheme names)", 
+        "Top welfare schemes details",
+        "Health scheme information",
         "Financial assistance programs",
-        "आर्थिक सहाय्य कार्यक्रम (Financial assistance programs)",
-        "Women welfare schemes",
-        "महिला कल्याण योजना (Women welfare schemes)",
-        "Farmer schemes and benefits",
-        "शेतकरी योजना आणि लाभ (Farmer schemes and benefits)"
+        "Eligibility criteria for schemes"
     ]
 
 def get_model_options():
@@ -648,13 +480,93 @@ def get_model_options():
     return {
         "llama-3.1-8b-instant": {
             "name": "Llama 3.1 8B (Fast & Efficient)", 
-            "description": "Best for quick queries, lower rate limits, optimized for government schemes"
+            "description": "Best for quick queries, lower rate limits"
         },
         "llama-3.3-70b-versatile": {
             "name": "Llama 3.3 70B (High Quality)", 
-            "description": "Best quality responses, detailed explanations, higher rate limits"
+            "description": "Best quality, but higher rate limits"
         }
     }
+
+def build_rag_chain_with_model_choice(pdf_file, txt_file, groq_api_key, model_choice="llama-3.1-8b-instant", enhanced_mode=True):
+    """
+    Build RAG chain with selectable model.
+    """
+    # Same as build_rag_chain_from_files but with model parameter
+    pdf_path = txt_path = None
+    if not (pdf_file or txt_file):
+        raise ValueError("At least one file (PDF or TXT) must be provided.")
+    
+    try:
+        if pdf_file:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_pdf:
+                tmp_pdf.write(pdf_file.read())
+                pdf_path = tmp_pdf.name
+        if txt_file:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp_txt:
+                tmp_txt.write(txt_file.read())
+                txt_path = tmp_txt.name
+
+        all_docs = []
+        if pdf_path:
+            all_docs += PyPDFLoader(pdf_path).load()
+        if txt_path:
+            all_docs += TextLoader(txt_path, encoding="utf-8").load()
+        
+        if not all_docs:
+            raise ValueError("No valid documents loaded.")
+
+        # Adjust parameters based on model
+        if model_choice == "llama-3.1-8b-instant":
+            chunk_size, max_chunks, max_tokens = 800, 12, 1500
+        elif model_choice == "llama-3.1-70b-versatile":
+            chunk_size, max_chunks, max_tokens = 700, 18, 2500
+        else:  # llama-3.3-70b-versatile
+            chunk_size, max_chunks, max_tokens = 800, 20, 3000
+
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=chunk_size,
+            chunk_overlap=200,
+            separators=["\n\n", "\n", ".", "!", "?", ",", " ", ""]
+        )
+        splits = splitter.split_documents(all_docs)
+        retriever = TFIDFRetriever.from_documents(splits, k=min(max_chunks, len(splits)))
+
+        llm = ChatGroq(
+            api_key=groq_api_key, 
+            model=model_choice,
+            temperature=0.0,
+            max_tokens=max_tokens
+        )
+        
+        if enhanced_mode:
+            custom_prompt = PromptTemplate(
+                template="""Answer based on context. For scheme lists, include all schemes found.
+
+Context: {context}
+Question: {question}
+Answer:""",
+                input_variables=["context", "question"]
+            )
+            chain_kwargs = {"prompt": custom_prompt}
+        else:
+            chain_kwargs = {}
+        
+        return RetrievalQA.from_chain_type(
+            llm=llm,
+            chain_type="stuff",
+            retriever=retriever,
+            return_source_documents=False,
+            chain_type_kwargs=chain_kwargs
+        )
+            
+    except Exception as e:
+        raise ValueError(f"Failed to build RAG chain: {str(e)}")
+    finally:
+        if pdf_path and os.path.exists(pdf_path):
+            os.unlink(pdf_path)
+        if txt_path and os.path.exists(txt_path):
+            os.unlink(txt_path)
 
 def get_tts_settings():
     """
@@ -798,48 +710,3 @@ def batch_generate_audio(texts, language=None, auto_detect=True):
 
 # Alias for backward compatibility
 process_scheme_query = process_scheme_query_with_retry
-
-def extract_scheme_details(text, scheme_name):
-    """Enhanced scheme details extraction for bilingual content"""
-    details = {
-        "name": scheme_name,
-        "description": {"en": [], "mr": []},
-        "eligibility": {"en": [], "mr": []},
-        "benefits": {"en": [], "mr": []},
-        "documents": {"en": [], "mr": []},
-        "helpline": [],
-        "website": []
-    }
-    
-    # Extract website links
-    website_pattern = r'(?:http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+|(?:www\.)[a-zA-Z0-9\-\.]+\.[a-zA-Z]{2,3}(?:/\S*)?)'
-    details["website"] = re.findall(website_pattern, text)
-    
-    # Extract helpline numbers
-    helpline_pattern = r'(?:हेल्प लाईन|Helpline|Toll Free|104|102).*?([0-9\-]{8,})'
-    helpline_matches = re.findall(helpline_pattern, text, re.IGNORECASE)
-    details["helpline"] = helpline_matches
-
-    # Process English sections
-    for section in ["Description:", "Eligibility:", "Benefits:"]:
-        pattern = f"{section}(.*?)(?={'|'.join(ENGLISH_KEYWORDS)}|$)"
-        matches = re.findall(pattern, text, re.DOTALL | re.IGNORECASE)
-        if matches:
-            key = section.lower().strip(":")
-            if key in details:
-                details[key]["en"] = [m.strip() for m in matches if m.strip()]
-
-    # Process Marathi sections
-    marathi_patterns = {
-        "description": r'उद्देशः?(.*?)(?=पात्रता|लाभार्थी|$)',
-        "eligibility": r'(?:पात्रता|लाभार्थी).*?निकष?(.*?)(?=लाभ|अर्ज|$)',
-        "benefits": r'(?:लाभ|सुविधा)(.*?)(?=कागदपत्रे|अर्ज|$)',
-        "documents": r'(?:कागदपत्रे|आवश्यक दस्तऐवज)(.*?)(?=अर्ज|$)'
-    }
-
-    for key, pattern in marathi_patterns.items():
-        matches = re.findall(pattern, text, re.DOTALL | re.UNICODE)
-        if matches and key in details:
-            details[key]["mr"] = [m.strip() for m in matches if m.strip()]
-
-    return details
