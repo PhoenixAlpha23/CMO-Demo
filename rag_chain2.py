@@ -236,8 +236,8 @@ MARATHI_KEYWORDS = [
 class EnhancedTFIDFRetriever(TFIDFRetriever,ENGLISH_KEYWORDS,MARATHI_KEYWORDS):
     """Enhanced TFIDF Retriever with keyword boosting for government schemes"""
 
-    ENGLISH_KEYWORDS: ClassVar[List[str]] = ENGLISH_KEYWORDS
-    MARATHI_KEYWORDS: ClassVar[List[str]] = MARATHI_KEYWORDS
+    english_keywords: ClassVar[List[str]] = ENGLISH_KEYWORDS
+    marathi_keywords: ClassVar[List[str]] = MARATHI_KEYWORDS
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
