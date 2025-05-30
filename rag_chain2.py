@@ -12,7 +12,7 @@ from langchain_community.retrievers import TFIDFRetriever
 from langchain.prompts import PromptTemplate
 import re
 from langchain.globals import set_verbose, get_verbose
-set_verbose(True)  # or False, depending on what you need
+set_verbose(True) 
 
 
 # New imports for TTS and language detection
@@ -479,7 +479,7 @@ def get_model_options():
     """
     return {
         "llama-3.1-8b-instant": {
-            "name": "Llama 3.1 8B (Fast & Cheap)", 
+            "name": "Llama 3.1 8B (Fast & Efficient)", 
             "description": "Best for quick queries, lower rate limits"
         },
         "llama-3.3-70b-versatile": {

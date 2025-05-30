@@ -489,11 +489,9 @@ def main():
         else:
             st.info("No chat history yet. Ask your first question!")
             st.markdown("""
-            **💡 Rate-limit friendly tips:**
-            - Start with specific questions rather than "list all schemes"
+            **💡 Tips:**
             - Wait 2-3 seconds between queries
             - Use the 8B model for simple questions
-            - Cached results (marked with 🚀) don't count against rate limits
             - 🔊 TTS responses are cached to save time and resources
             """)
 
