@@ -11,12 +11,15 @@ from langchain_groq import ChatGroq
 from langchain_community.retrievers import TFIDFRetriever
 from langchain.prompts import PromptTemplate
 import re
-from typing import List 
+from typing import List # Corrected import, removed ClassVar
 from langchain.globals import set_verbose, get_verbose
-set_verbose(True) 
-import sys
+import sys # Import sys module
 
-sys.setrecursionlimit(5000)
+set_verbose(True) 
+
+# Increase the recursion limit - this helps with deep internal calls in libraries like scikit-learn
+sys.setrecursionlimit(5000) 
+
 # New imports for TTS and language detection
 try:
     from gtts import gTTS
@@ -37,7 +40,7 @@ _cache_max_size = 50
 _audio_cache = {}
 _audio_cache_max_size = 20
 
-# UNIFIED GOVERNMENT SCHEMES PROMPT
+# UNIFIED GOVERNMENT SCHEMES PROMPT - Re-added from your desired new logic
 GOVERNMENT_SCHEMES_PROMPT = """You are a Knowledge Assistant designed for answering questions specifically from the knowledge base provided to you.
 
 Your task is as follows: give a detailed response for user query in the user language (eg. what are some schemes? --> Here is a list of some schemes)
@@ -57,6 +60,17 @@ Question: {question}
 Now perform the task as instructed above.
 
 Answer:"""
+
+# Global constants for keywords - Re-added from your desired new logic
+ENGLISH_KEYWORDS = [
+    "Description:", "Eligibility:", "Target Group:", "Inclusion Criteria:",
+    "Exclusion Criteria:", "Benefits:", "Helpline:"
+]
+
+MARATHI_KEYWORDS = [
+    "उद्देशः", "अंतर्भूत घटक", "हेल्प लाईन क्र", "योजना", "लाभार्थी", 
+    "सेवा", "हेल्पलाइन", "टोल फ्री नंबर", "हेल्पलाईनवर", "अधिक माहितीसाठी", "अधिक", " माहिती"
+]
 
 def get_query_hash(query_text):
     """Generate a hash for caching queries"""
@@ -87,7 +101,8 @@ def cache_audio(audio_hash, audio_data):
         # Remove oldest entry
         oldest_key = next(iter(_audio_cache))
         del _audio_cache[oldest_key]
-    _audio_cache[oldest_key] = audio_data
+    _audio_cache[audio_hash] = audio_data # Corrected: use audio_hash as key
+    # Note: The previous version had `_audio_cache[oldest_key] = audio_data` which was a bug.
 
 def get_cached_audio(audio_hash):
     """Get cached audio if available"""
@@ -130,7 +145,12 @@ def detect_language(text):
         lang_mapping = {
             'hi': 'hi',  # Hindi
             'mr': 'mr',  # Marathi
-            'en': 'en'  # English
+            'en': 'en',  # English
+            'gu': 'gu',  # Gujarati
+            'ta': 'ta',  # Tamil
+            'te': 'te',  # Telugu
+            'kn': 'kn',  # Kannada
+            'bn': 'bn'   # Bengali
         }
         
         return lang_mapping.get(detected, 'en')
@@ -224,17 +244,7 @@ def play_audio_pygame(audio_bytes):
         print(f"Pygame audio error: {e}")
         return False
 
-# Global constants — keep these defined at the top level
-ENGLISH_KEYWORDS = [
-    "Description:", "Eligibility:", "Target Group:", "Inclusion Criteria:",
-    "Exclusion Criteria:", "Benefits:", "Helpline:"
-]
-
-MARATHI_KEYWORDS = [
-    "उद्देशः", "अंतर्भूत घटक", "हेल्प लाईन क्र", "योजना", "लाभार्थी", 
-    "सेवा", "हेल्पलाइन", "टोल फ्री नंबर", "हेल्पलाईनवर", "अधिक माहितीसाठी", "अधिक", " माहिती"
-]
-
+# EnhancedTFIDFRetriever class - Re-added from your desired new logic
 class EnhancedTFIDFRetriever(TFIDFRetriever):
     """Enhanced TFIDF Retriever with keyword boosting for government schemes"""
 
@@ -257,12 +267,12 @@ class EnhancedTFIDFRetriever(TFIDFRetriever):
             content = doc.page_content.lower()
 
             # Boost for English keywords
-            for keyword in self.english_keywords: # Accessing class attribute via self
+            for keyword in self.english_keywords: 
                 if keyword.lower() in content:
                     score += 2
 
             # Boost for Marathi keywords
-            for keyword in self.marathi_keywords: # Accessing class attribute via self
+            for keyword in self.marathi_keywords: 
                 if keyword in doc.page_content:
                     score += 3
 
@@ -307,7 +317,7 @@ def build_rag_chain_from_files(pdf_file, txt_file, groq_api_key, enhanced_mode=T
         if not all_docs:
             raise ValueError("No valid documents loaded.")
 
-        # Enhanced chunking for government schemes
+        # Enhanced chunking for government schemes (using parameters from your previous attempt)
         if enhanced_mode:
             splitter = RecursiveCharacterTextSplitter(
                 chunk_size=1000,  # Increased for better context preservation
@@ -326,11 +336,10 @@ def build_rag_chain_from_files(pdf_file, txt_file, groq_api_key, enhanced_mode=T
         
         splits = splitter.split_documents(all_docs)
         
-        # Use enhanced retriever with keyword boosting
+        # Use enhanced retriever with keyword boosting when enhanced_mode is True
         max_chunks = 15 if enhanced_mode else 20
         if enhanced_mode:
-            retriever = EnhancedTFIDFRetriever.from_documents(splits,k=min(max_chunks, len(splits)))
-
+            retriever = EnhancedTFIDFRetriever.from_documents(splits, k=min(max_chunks, len(splits)))
         else:
             retriever = TFIDFRetriever.from_documents(splits, k=min(max_chunks, len(splits)))
 
@@ -368,7 +377,6 @@ def build_rag_chain_with_model_choice(pdf_file, txt_file, groq_api_key, model_ch
     """
     Build RAG chain with selectable model and unified government schemes prompt.
     """
-    # Same as build_rag_chain_from_files but with model parameter
     pdf_path = txt_path = None
     if not (pdf_file or txt_file):
         raise ValueError("At least one file (PDF or TXT) must be provided.")
@@ -392,7 +400,7 @@ def build_rag_chain_with_model_choice(pdf_file, txt_file, groq_api_key, model_ch
         if not all_docs:
             raise ValueError("No valid documents loaded.")
 
-        # Adjust parameters based on model
+        # Adjust parameters based on model (using parameters from your previous attempt)
         if model_choice == "llama-3.1-8b-instant":
             chunk_size, max_chunks, max_tokens = 1000, 12, 1800
         elif model_choice == "llama-3.1-70b-versatile":
@@ -407,7 +415,7 @@ def build_rag_chain_with_model_choice(pdf_file, txt_file, groq_api_key, model_ch
         )
         splits = splitter.split_documents(all_docs)
         
-        # Use enhanced retriever with keyword boosting
+        # Use enhanced retriever with keyword boosting when enhanced_mode is True
         if enhanced_mode:
             retriever = EnhancedTFIDFRetriever.from_documents(splits, k=min(max_chunks, len(splits)))
         else:
@@ -442,62 +450,40 @@ def build_rag_chain_with_model_choice(pdf_file, txt_file, groq_api_key, model_ch
         if txt_path and os.path.exists(txt_path):
             os.unlink(txt_path)
 
-def extract_all_scheme_names(text):
-    """Enhanced scheme name extraction with better patterns"""
-    # Normalize text
-    text = re.sub(r'\s+', ' ', text)
-    text = text.replace('\n', ' ')
-
-    # Enhanced patterns for better scheme detection
-    patterns = [
-        # English schemes
-        r'\b(?:[A-Z][a-z]+(?: [A-Z][a-z]+)*) (?:Scheme|Programme|Mission|Yojana|Initiative|Project)\b',
-        r'\bPradhan Mantri [A-Z][a-z]+(?: [A-Z][a-z]+)* (?:Scheme|Yojana)\b',
-        r'\b[A-Z]{2,6}\s*(?:Scheme|Programme|Mission)\b',  # Acronyms
-        
-        # Marathi/Hindi schemes
-        r'\b(?:[अ-ह]+\s*){1,4}(?:योजना|अभियान|कार्यक्रम|सेवा|केंद्र)\b',
-        r'\bप्रधानमंत्री\s+(?:[अ-ह]+\s*){1,3}योजना\b',
-        r'\bमुख्यमंत्री\s+(?:[अ-ह]+\s*){1,3}योजना\b',
-        
-        # Mixed language patterns
-        r'\b(?:[A-Za-z]+[-\s]*){1,4}(?:योजना|Yojana)\b',
-    ]
-
-    all_matches = set()
-    for pattern in patterns:
-        matches = re.findall(pattern, text, re.UNICODE)
-        all_matches.update(match.strip() for match in matches if len(match.strip()) > 4)
-
-    return sorted(list(all_matches))
-
-def process_unified_query(rag_chain, user_query, max_retries=3, enable_tts=False, autoplay=False):
+def process_scheme_query_with_retry(rag_chain, user_query, max_retries=3, enable_tts=False, autoplay=False):
     """
-    Process query using unified prompt with enhanced error handling and fallback
+    Process query with rate limit handling, caching, and optional TTS.
+    Returns: (text_result, audio_html, language_detected, cache_info)
     """
     # Check cache first
     query_hash = get_query_hash(user_query.lower().strip())
     cached_result = get_cached_result(query_hash)
-    
     if cached_result:
-        result_text = cached_result
-        cache_status = "hit"
+        result_text = f"[Cached] {cached_result}"
     else:
-        cache_status = "miss"
+        # Check for comprehensive queries
+        comprehensive_keywords = [
+            "all schemes", "list schemes", "complete list", "सर्व योजना", 
+            "total schemes", "how many schemes", "scheme names", "सर्व", "यादी"
+        ]
         
-        # Process with retry logic
+        is_comprehensive_query = any(keyword in user_query.lower() for keyword in comprehensive_keywords)
+        
         for attempt in range(max_retries):
             try:
-                result = rag_chain.invoke({"query": user_query})
-                result_text = result.get('result', 'No results found.')
+                if is_comprehensive_query:
+                    result_text = query_all_schemes_optimized(rag_chain)
+                else:
+                    result = rag_chain.invoke({"query": user_query})
+                    result_text = result.get('result', 'No results found.')
                 
-                # Apply fallback message if no relevant info found
+                # Apply fallback message if no relevant info found (from your original prompt logic)
                 if any(phrase in result_text.lower() for phrase in [
                     "no information", "not found", "cannot find", "not available",
                     "माहिती उपलब्ध नाही", "सापडले नाही"
                 ]):
                     result_text += "\n\nFor more details contact on 104/102 helpline numbers."
-                
+
                 # Cache successful result
                 cache_result(query_hash, result_text)
                 break
@@ -505,34 +491,47 @@ def process_unified_query(rag_chain, user_query, max_retries=3, enable_tts=False
             except Exception as e:
                 error_str = str(e)
                 
-                if "rate_limit" in error_str.lower() or "413" in error_str:
+                if "rate_limit_exceeded" in error_str or "413" in error_str:
                     if attempt < max_retries - 1:
-                        wait_time = (attempt + 1) * 2
+                        wait_time = (attempt + 1) * 2  # Progressive backoff
                         time.sleep(wait_time)
                         continue
                     else:
-                        result_text = "Rate limit reached. Please wait and try again. For immediate help, contact 104/102 helpline numbers."
+                        result_text = f"Rate limit reached. Please wait a moment and try again. You can also try a more specific question to reduce processing time."
                         break
                 
-                elif "too large" in error_str.lower():
-                    result_text = "Query too complex. Please ask about specific schemes. For general help, contact 104/102 helpline numbers."
+                elif "Request too large" in error_str:
+                    # Try with a simpler, shorter query
+                    if is_comprehensive_query and attempt == 0:
+                        simplified_query = "list main government schemes"
+                        try:
+                            result = rag_chain.invoke({"query": simplified_query})
+                            result_text = result.get('result', 'No results found.')
+                            result_text = f"[Simplified due to size limits] {result_text}"
+                            break
+                        except:
+                            pass
+                    
+                    result_text = "Query too large for current model. Try asking about specific schemes or categories instead of requesting all schemes at once."
                     break
                 
                 else:
-                    if attempt == max_retries - 1:
-                        result_text = f"Error processing query. For assistance, contact 104/102 helpline numbers."
-                    continue
+                    result_text = f"Error processing query: {error_str}"
+                    break
+        else: # This else block executes if the loop completes without a 'break'
+            result_text = "Unable to process query after multiple attempts. Please try a simpler question."
     
     # Generate TTS if enabled
     audio_html = ""
     language_detected = "en"
-    cache_info = {"text_cache": cache_status, "audio_cache": "disabled"}
+    cache_info = {"text_cache": "hit" if cached_result else "miss", "audio_cache": "disabled"}
     
     if enable_tts and TTS_AVAILABLE:
-        # Clean text for TTS
-        clean_text = re.sub(r'[✅ℹ️🔍📋💫📞]', '', result_text).strip()
+        # Clean result text for TTS (remove cache prefixes and formatting)
+        clean_text = re.sub(r'\[Cached\]|\[Simplified.*?\]', '', result_text).strip()
+        clean_text = re.sub(r'[✅ℹ️🔍]', '', clean_text)  # Remove emojis
         
-        if len(clean_text) > 10:
+        if len(clean_text) > 10:  # Only generate TTS for substantial text
             audio_bytes, language_detected, audio_status = text_to_speech(clean_text, auto_detect=True)
             cache_info["audio_cache"] = audio_status
             
@@ -540,6 +539,30 @@ def process_unified_query(rag_chain, user_query, max_retries=3, enable_tts=False
                 audio_html = get_audio_player_html(audio_bytes, autoplay=autoplay)
     
     return result_text, audio_html, language_detected, cache_info
+
+def extract_all_scheme_names(text):
+    """Enhanced scheme name extraction with better patterns"""
+    # Normalize text
+    text = re.sub(r'\s+', ' ', text)  # collapse all whitespace
+    text = text.replace('\n', ' ')    # remove newline breaks
+
+    # Define scheme patterns
+    patterns = [
+        r'\b(?:[A-Z][a-z]+(?: [A-Z][a-z]+)* )?(?:scheme|yojana|Yojana|Scheme|अभियान|योजना|कार्यक्रम|सेवा|केंद्र|संपर्क)\b',  # General English or Marathi scheme mentions
+        r'\b(?:[A-Z][a-z]+ ){0,5}कार्यक्रम\b',  # National Programme, .
+        r'\b(?:Pradhan Mantri|प्रधानमंत्री|माता|जननी|महात्मा).*?(?:Scheme|Yojana|योजना)\b',  # Named schemes
+        r'[A-Z]{2,10}\s*(?:Scheme|Yojana|Programme)',  # Acronyms like JSY, CGHS, NHM
+        r'\b[A-Z][a-z]+(?:-[A-Z][a-z]+)*\s+Yojna\b',  # Abhiyan-type names (e.g., Suraksha Abhiyan)
+    ]
+
+    # Combine and apply all patterns
+    combined_pattern = '|'.join(patterns)
+    matches = re.findall(combined_pattern, text)
+
+    # Clean and deduplicate
+    cleaned = list(set([match.strip().rstrip(':.,;') for match in matches if len(match.strip()) > 4]))
+
+    return sorted(cleaned)
 
 def query_all_schemes_optimized(rag_chain):
     """
@@ -577,7 +600,7 @@ def query_all_schemes_optimized(rag_chain):
     if len(all_extracted_schemes) < 5:
         try:
             result = rag_chain.invoke({"query": "List all government schemes mentioned in the documents."})
-            content = result.get('result', '') if isinstance(result, dict) else str(content)
+            content = result.get('result', '') if isinstance(result, dict) else str(result)
             fallback_schemes = extract_schemes_from_text(content)
             all_extracted_schemes.update(fallback_schemes)
         except:
@@ -642,7 +665,12 @@ def get_tts_settings():
         "supported_languages": {
             'en': 'English',
             'hi': 'Hindi',
-            'mr': 'Marathi'
+            'mr': 'Marathi', 
+            'gu': 'Gujarati',
+            'ta': 'Tamil',
+            'te': 'Telugu',
+            'kn': 'Kannada',
+            'bn': 'Bengali'
         },
         "cache_stats": {
             "audio_cache_size": len(_audio_cache),
@@ -661,6 +689,7 @@ def clear_text_cache():
     global _query_cache
     _query_cache.clear()
     return "Text cache cleared successfully"
+
 def generate_audio_response(text, language=None, lang_preference=None, speed=1.0, auto_detect=True):
     """
     Generate audio response for given text - updated to match rag_app.py expectations
@@ -703,6 +732,73 @@ def generate_audio_response(text, language=None, lang_preference=None, speed=1.0
         print(f"Error generating audio: {str(e)}")
         return None, target_lang, False
 
+def create_audio_player(audio_bytes, autoplay=False, controls=True):
+    """
+    Create HTML audio player with customizable options
+    """
+    if not audio_bytes:
+        return ""
+    
+    audio_b64 = base64.b64encode(audio_bytes).decode()
+    
+    autoplay_attr = "autoplay" if autoplay else ""
+    controls_attr = "controls" if controls else ""
+    
+    html = f"""
+    <div style="margin: 10px 0;">
+        <audio {controls_attr} {autoplay_attr} style="width: 100%;">
+            <source src="data:audio/mp3;base64,{audio_b64}" type="audio/mpeg">
+            <p>Your browser does not support the audio element.</p>
+        </audio>
+    </div>
+    """
+    
+    return html
+
+def get_audio_status():
+    """
+    Get current audio system status and cache information
+    """
+    return {
+        'tts_available': TTS_AVAILABLE,
+        'audio_cache_size': len(_audio_cache),
+        'audio_cache_max': _audio_cache_max_size,
+        'text_cache_size': len(_query_cache),
+        'text_cache_max': _cache_max_size,
+        'supported_languages': [
+            'en', 'hi', 'mr', 'gu', 'ta', 'te', 'kn', 'bn'
+        ] if TTS_AVAILABLE else []
+    }
+
+def batch_generate_audio(texts, language=None, auto_detect=True):
+    """
+    Generate audio for multiple texts efficiently
+    Returns: list of audio results
+    """
+    results = []
+    
+    for i, text in enumerate(texts):
+        if i > 0:
+            time.sleep(0.5)  # Small delay to avoid overwhelming TTS service
+        
+        audio_data, detected_lang, cache_hit = generate_audio_response(
+            text=text,
+            language=language,
+            auto_detect=auto_detect
+        )
+        
+        results.append({
+            'audio_data': audio_data,
+            'detected_lang': detected_lang,
+            'cache_hit': cache_hit,
+            'success': audio_data is not None
+        })
+    
+    return results
+
+# Alias for backward compatibility
+process_scheme_query = process_scheme_query_with_retry
+
 def extract_scheme_details(text, scheme_name):
     """Enhanced scheme details extraction for bilingual content"""
     details = {
@@ -720,7 +816,7 @@ def extract_scheme_details(text, scheme_name):
     details["website"] = re.findall(website_pattern, text)
     
     # Extract helpline numbers
-    helpline_pattern = r'(?:हेल्प लाईन|Helpline|टोल फ्री|Toll Free|104|102).*?([0-9\-]{8,})'
+    helpline_pattern = r'(?:हेल्प लाईन|Helpline|Toll Free|104|102).*?([0-9\-]{8,})'
     helpline_matches = re.findall(helpline_pattern, text, re.IGNORECASE)
     details["helpline"] = helpline_matches
 
@@ -747,7 +843,3 @@ def extract_scheme_details(text, scheme_name):
             details[key]["mr"] = [m.strip() for m in matches if m.strip()]
 
     return details
-
-# Main function alias for backward compatibility
-process_scheme_query_with_retry = process_unified_query
-process_scheme_query = process_unified_query
