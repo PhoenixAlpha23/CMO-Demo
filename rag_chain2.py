@@ -281,7 +281,10 @@ Answer:""",
         else:
             custom_prompt = PromptTemplate(
                 template=""" You are a knowledgable Assistant designed to answer queries of Citizens in simple, everyday language ,answer in the exact way the the questions are asked. 
-                your goal is to help them understand which schemes are best suited for them. If you do not have relevant context for user query suggest calling upon 104/102 helpline numbers"""
+                your goal is to help them understand which schemes are best suited for them. 
+                If you do not have relevant context for user query suggest calling upon 104/102 helpline numbers""",
+                input_variables=["context", "question"]
+            )
 
         chain_kwargs = {"prompt": custom_prompt} if custom_prompt else {}
         
