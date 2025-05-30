@@ -53,6 +53,16 @@ Now perform the task as instructed above.
 
 Answer:"""
 
+ENGLISH_KEYWORDS = [
+    "Description:", "Eligibility:", "Target Group:", "Inclusion Criteria:",
+    "Exclusion Criteria:", "Benefits:", "Helpline:"
+]
+
+MARATHI_KEYWORDS = [
+    "उद्देशः", "अंतर्भूत घटक", "हेल्प लाईन क्र", "योजना", "लाभार्थी", 
+    "सेवा", "हेल्पलाइन", "टोल फ्री नंबर", "हेल्पलाईनवर", "अधिक माहितीसाठी", "अधिक", " माहिती"
+]
+
 def get_query_hash(query_text):
     """Generate a hash for caching queries"""
     return hashlib.md5(query_text.encode()).hexdigest()
@@ -221,19 +231,15 @@ def play_audio_pygame(audio_bytes):
 
 class EnhancedTFIDFRetriever(TFIDFRetriever):
     """Enhanced TFIDF Retriever with keyword boosting for government schemes"""
-    MARATHI_KEYWORDS:ClassVar[List[str]] = [
-    "उद्देशः", "अंतर्भूत घटक", "हेल्प लाईन क्र", "योजना", "लाभार्थी", 
-    "सेवा", "हेल्पलाइन", "टोल फ्री नंबर", "हेल्पलाईनवर","अधिक माहितीसाठी","अधिक"," माहिती"
-]
-    
-    ENGLISH_KEYWORDS: ClassVar[List[str]] = [
-    "Description:", "Eligibility:", "Target Group:", "Inclusion Criteria:",
-    "Exclusion Criteria:", "Benefits:", "Helpline:"
-]
+
+    ENGLISH_KEYWORDS: ClassVar[List[str]] = ENGLISH_KEYWORDS
+    MARATHI_KEYWORDS: ClassVar[List[str]] = MARATHI_KEYWORDS
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.english_keywords = ENGLISH_KEYWORDS
-        self.marathi_keywords = MARATHI_KEYWORDS
+        self.english_keywords = self.ENGLISH_KEYWORDS
+        self.marathi_keywords = self.MARATHI_KEYWORDS
+
     
     def get_relevant_documents(self, query, k=None):
         """Enhanced retrieval with keyword boosting"""
