@@ -11,7 +11,7 @@ from langchain_groq import ChatGroq
 from langchain_community.retrievers import TFIDFRetriever
 from langchain.prompts import PromptTemplate
 import re
-from typing import ClassVar, List
+from typing import List # Removed ClassVar
 from langchain.globals import set_verbose, get_verbose
 set_verbose(True) 
 
@@ -85,7 +85,7 @@ def cache_audio(audio_hash, audio_data):
         # Remove oldest entry
         oldest_key = next(iter(_audio_cache))
         del _audio_cache[oldest_key]
-    _audio_cache[audio_hash] = audio_data
+    _audio_cache[oldest_key] = audio_data
 
 def get_cached_audio(audio_hash):
     """Get cached audio if available"""
@@ -236,13 +236,14 @@ MARATHI_KEYWORDS = [
 class EnhancedTFIDFRetriever(TFIDFRetriever):
     """Enhanced TFIDF Retriever with keyword boosting for government schemes"""
 
-    english_keywords: ClassVar[List[str]] = ENGLISH_KEYWORDS
-    marathi_keywords: ClassVar[List[str]] = MARATHI_KEYWORDS
+    # Removed ClassVar annotation. These are now regular class attributes.
+    english_keywords: List[str] = ENGLISH_KEYWORDS
+    marathi_keywords: List[str] = MARATHI_KEYWORDS
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.english_keywords = EnhancedTFIDFRetriever.ENGLISH_KEYWORDS
-        self.marathi_keywords = EnhancedTFIDFRetriever.MARATHI_KEYWORDS
+        # Removed explicit assignments like self.english_keywords = EnhancedTFIDFRetriever.english_keywords
+        # as they are redundant when defined as class attributes. Python's MRO handles this.
 
     def get_relevant_documents(self, query, k=None):
         if k is None:
@@ -256,12 +257,12 @@ class EnhancedTFIDFRetriever(TFIDFRetriever):
             content = doc.page_content.lower()
 
             # Boost for English keywords
-            for keyword in self.english_keywords:
+            for keyword in self.english_keywords: # Accessing class attribute via self
                 if keyword.lower() in content:
                     score += 2
 
             # Boost for Marathi keywords
-            for keyword in self.marathi_keywords:
+            for keyword in self.marathi_keywords: # Accessing class attribute via self
                 if keyword in doc.page_content:
                     score += 3
 
