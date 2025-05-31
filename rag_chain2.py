@@ -35,7 +35,7 @@ def build_rag_chain_from_files(pdf_file, txt_file, groq_api_key):
         llm = ChatGroq(
             api_key=groq_api_key,
             model="deepseek-r1-distill-llama-70b",
-            temperature=0.1,
+            temperature=0.0,
             max_tokens=2000
         )
 
