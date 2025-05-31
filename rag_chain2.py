@@ -40,21 +40,35 @@ def build_rag_chain_from_files(pdf_file, txt_file, groq_api_key):
         )
 
         prompt = PromptTemplate(
-            template="""You are a Knowledge Assistant designed for answering questions specifically from the knowledge base provided to you.
-Your task is as follows: give a detailed response for user query in the user language (eg. what are some schemes? --> Here is a list of some schemes)
-Ensure your response follows these styles and tone in your response:
-* Use direct, everyday language
-* Personal and human
-* Favour detailed responses, with mentions of websites and headings such as description, eligibility or उद्देशः, अंतर्भूत घटकः
-* In case no relevant information is found, default your response to a phrase like "For more details contact on 104/102 helpline numbers."
+            template=prompt = PromptTemplate(
+    template="""
+You are a government scheme assistant. You must answer based ONLY on the context provided below.
+Always structure your output like this if relevant information is available:
+Schemes:
+[scheme names and summaries]
 
-Your goal is to achieve the following: help a citizen understand about the schemes and its eligibility criteria.
-Here is the content you will work with: {context}
-Question: {question}
-Now perform the task as instructed above.
-Answer:""",
-            input_variables=["context", "question"]
-        )
+Websites (if any):
+[list any URLs related to the scheme]
+
+Helpline (if any):
+[mention phone numbers if present]
+
+If no relevant information is found, say:
+"I don't have relevant information for this. You can contact 102/104 helpline numbers for details."
+
+Use language that matches the user's question. Be helpful, concise, and complete.
+
+Context:
+{context}
+
+Question:
+{question}
+
+Answer:
+""",
+    input_variables=["context", "question"]
+)
+
 
         return RetrievalQA.from_chain_type(
             llm=llm,
