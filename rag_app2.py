@@ -4,8 +4,7 @@ import os
 from groq import Groq
 from rag_chain2 import (
     build_rag_chain_with_model_choice, 
-    process_scheme_query_with_retry, 
-    get_optimized_query_suggestions,
+    process_scheme_query_with_retry,
     get_model_options,
     generate_audio_response,
     get_audio_cache_stats
@@ -89,6 +88,16 @@ def safe_get_cache_stats():
         # If the function fails entirely, return default values
         st.warning(f"Cache stats unavailable: {e}")
         return {"total": 0, "hit_rate": 0.0}
+
+# Language name mapping for display
+LANG_CODE_TO_NAME = {
+    'en': 'English', 'hi': 'Hindi', 'mr': 'Marathi',
+    'gu': 'Gujarati', 'ta': 'Tamil', 'te': 'Telugu',
+    'kn': 'Kannada', 'bn': 'Bengali',
+    # Add more if langdetect commonly returns them and you want specific names
+    'auto': 'Auto-Detected' # For UI display if needed
+}
+ALLOWED_TTS_LANGS = {'en', 'hi', 'mr'}
 
 def main():
     st.set_page_config(page_title="CMRF RAG Assistant", layout="wide")
@@ -212,19 +221,6 @@ def main():
             except Exception as e:
                 st.error(f"Failed to build RAG system: {e}")
                 st.stop()
-    
-    # Rate-limit friendly suggestions
-    with st.expander("💡 Optimized Query Suggestions", expanded=False):
-        st.markdown("**Rate-limit friendly queries:**")
-        suggestions = get_optimized_query_suggestions()
-        
-        col1, col2 = st.columns(2)
-        for i, suggestion in enumerate(suggestions):
-            col = col1 if i % 2 == 0 else col2
-            with col:
-                if st.button(suggestion, key=f"suggestion_{i}", use_container_width=True):
-                    st.session_state.suggested_query = suggestion
-                    st.rerun()
 
     # Input Section
     st.markdown("### Ask a question by typing or using audio input")
@@ -313,59 +309,53 @@ def main():
                 # Generate and display TTS audio
                 with st.spinner("🔊 Generating voice response..."):
                     try:
-                        # Check if generate_audio_response supports speed parameter
-                        import inspect
-                        audio_func_params = inspect.signature(generate_audio_response).parameters
+                        audio_result = generate_audio_response(
+                            clean_reply,
+                            speed=tts_speed,
+                            lang_preference=voice_lang_pref
+                        )
                         
-                        if 'speed' in audio_func_params:
-                            result = generate_audio_response(
-                                clean_reply, 
-                                speed=tts_speed,
-                                lang_preference=voice_lang_pref
-                            )
+                        # Fix: unpack tuple instead of calling .get
+                        if isinstance(audio_result, tuple) and len(audio_result) >= 3:
+                            audio_data, lang_used_for_tts, cache_hit = audio_result
+                            original_raw_detected_lang = lang_used_for_tts  # fallback
                         else:
-                            # Fallback without speed parameter
-                            result = generate_audio_response(
-                                clean_reply, 
-                                lang_preference=voice_lang_pref
-                            )
-                        
-                        # Handle different return formats
-                        if isinstance(result, dict):
-                            # If function returns a dictionary
-                            audio_data = result.get('audio_data')
-                            detected_lang = result.get('detected_lang', 'auto')
-                            cache_hit = result.get('cache_hit', False)
-                        elif isinstance(result, tuple) and len(result) >= 3:
-                            # If function returns a tuple
-                            audio_data, detected_lang, cache_hit = result
-                        elif isinstance(result, tuple) and len(result) == 2:
-                            # If function returns (audio_data, detected_lang)
-                            audio_data, detected_lang = result
+                            audio_data = None
+                            lang_used_for_tts = None
+                            original_raw_detected_lang = None
                             cache_hit = False
-                        else:
-                            # If function returns just audio_data
-                            audio_data = result
-                            detected_lang = 'auto'
-                            cache_hit = False
+
+                        # Alert if the original detected language of the content is not one of the allowed ones
+                        if original_raw_detected_lang not in ALLOWED_TTS_LANGS:
+                            display_original_lang_name = LANG_CODE_TO_NAME.get(original_raw_detected_lang, original_raw_detected_lang)
+                            display_tts_lang_name = LANG_CODE_TO_NAME.get(lang_used_for_tts, lang_used_for_tts)
+                            st.info(f"ℹ️ The response content's detected language is '{display_original_lang_name}'. "
+                                    f"TTS is generated in '{display_tts_lang_name}' (a supported language).")
                         
                         if audio_data:
                             # Show language detection info
-                            lang_names = {"en": "English", "hi": "Hindi", "mr": "Marathi", "auto": "Mixed"}
-                            lang_display = lang_names.get(detected_lang, detected_lang)
+                            # lang_display should be for lang_used_for_tts
+                            lang_display = LANG_CODE_TO_NAME.get(lang_used_for_tts, lang_used_for_tts.capitalize())
                             
                             cache_indicator = "🧠 (Cached)" if cache_hit else "🆕 (Generated)"
-                            speed_info = f" | Speed: {tts_speed}x" if 'speed' in audio_func_params else ""
+                            speed_info = f" | Speed: {tts_speed}x"
                             st.info(f"🔊 Voice: {lang_display}{speed_info} | {cache_indicator}")
                             
                             # Create and display audio player
                             audio_html = create_audio_player_html(
-                                audio_data, 
+                                audio_data,
                                 auto_play=st.session_state.auto_play_tts
                             )
                             st.markdown(audio_html, unsafe_allow_html=True)
                         else:
-                            st.warning("⚠️ Could not generate audio for this response")
+                            # Check if TTS was attempted for a non-supported language due to direct preference
+                            if voice_lang_pref != 'auto' and voice_lang_pref not in ALLOWED_TTS_LANGS:
+                                st.warning(f"⚠️ TTS for '{LANG_CODE_TO_NAME.get(voice_lang_pref, voice_lang_pref)}' is not directly supported. "
+                                           f"Audio might be generated in a default supported language if possible, or not at all.")
+                            elif not clean_reply.strip():
+                                st.info("ℹ️ No text to speak.")
+                            else:
+                                st.warning("⚠️ Could not generate audio for this response.")
                             
                     except Exception as audio_error:
                         st.warning(f"🔊 TTS Error: {audio_error}")
@@ -420,34 +410,20 @@ def main():
                         
                         try:
                             with st.spinner("Generating audio..."):
-                                # Check if generate_audio_response supports speed parameter
-                                import inspect
-                                audio_func_params = inspect.signature(generate_audio_response).parameters
-                                
-                                if 'speed' in audio_func_params:
-                                    result = generate_audio_response(
-                                        clean_text,
-                                        speed=tts_speed,
-                                        lang_preference=voice_lang_pref
-                                    )
-                                else:
-                                    # Fallback without speed parameter
-                                    result = generate_audio_response(
-                                        clean_text,
-                                        lang_preference=voice_lang_pref
-                                    )
-                                
-                                # Handle different return formats
-                                if isinstance(result, dict):
-                                    # If function returns a dictionary
-                                    audio_data = result.get('audio_data')
-                                elif isinstance(result, tuple) and len(result) >= 1:
-                                    # If function returns a tuple
-                                    audio_data = result[0]
-                                else:
-                                    # If function returns just audio_data
-                                    audio_data = result
-                                    
+                                # For historical playback, we use the user's current TTS settings
+                                # No alert for original language here, as the text is already visible.
+                                audio_result_hist = generate_audio_response(
+                                    clean_text,
+                                    speed=tts_speed,
+                                    lang_preference=voice_lang_pref
+                                )
+                                audio_data = audio_result_hist.get('audio_data')
+                                # lang_used_hist = audio_result_hist.get('lang_used_for_tts')
+                                # original_detected_hist = audio_result_hist.get('original_raw_detected_lang')
+                                # cache_hit_hist = audio_result_hist.get('cache_hit')
+                                # Optional: could display st.caption(f"TTS in {lang_used_hist}")
+
+
                             if audio_data:
                                 audio_html = create_audio_player_html(audio_data, auto_play=True)
                                 st.markdown(audio_html, unsafe_allow_html=True)
