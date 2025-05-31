@@ -48,5 +48,12 @@ query = st.text_input("Ask a question about schemes", placeholder="e.g. Show mai
 if st.button("🔍 Get Answer") and query:
     with st.spinner("Processing query..."):
         response = process_scheme_query(st.session_state.rag_chain, query)
-        st.markdown("### 📋 Answer:")
-        st.success(response)
+
+        # Ensure output formatting for detailed response structure
+        st.markdown("### 📋 Detailed Answer:")
+
+        if "schemes:" in response.lower():
+            st.success(response)
+        else:
+            fallback = "\n\nI don't have relevant information for this. You can contact 102/104 helpline numbers for more details."
+            st.warning(response + fallback)
