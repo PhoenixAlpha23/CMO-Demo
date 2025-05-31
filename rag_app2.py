@@ -55,5 +55,5 @@ if st.button("🔍 Get Answer") and query:
         if "schemes:" in response.lower():
             st.success(response)
         else:
-            fallback = "\n\nI don't have relevant information for this. You can contact 102/104 helpline numbers for more details."
+            fallback = "\n\nI don't have relevant information for this. You can contact 102/104 helpline numbers for scheme details."
             st.warning(response + fallback)
