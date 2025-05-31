@@ -301,6 +301,17 @@ def process_scheme_query_with_retry(rag_chain, user_query, max_retries=3, enable
     Process query with rate limit handling, caching, and optional TTS.
     Returns: (text_result, audio_html, language_detected, cache_info)
     """
+    # Detect language and enforce allowed languages for text processing
+    supported_languages = {"en", "hi", "mr"}
+    detected_lang = detect_language(user_query)
+    if detected_lang not in supported_languages:
+        return (
+            "⚠️ Sorry, only Marathi, Hindi, and English are supported. कृपया मराठी, हिंदी अथवा इंग्रजी भाषेत विचारा.",
+            "",
+            detected_lang,
+            {"text_cache": "skipped", "audio_cache": "not_generated"}
+        )
+
     # Check cache first
     query_hash = get_query_hash(user_query.lower().strip())
     cached_result = get_cached_result(query_hash)
@@ -321,7 +332,13 @@ def process_scheme_query_with_retry(rag_chain, user_query, max_retries=3, enable
                     result_text = query_all_schemes_optimized(rag_chain)
                 else:
                     result = rag_chain.invoke({"query": user_query})
-                    result_text = result.get('result', 'No results found.')
+                    if isinstance(result, dict):
+                        result_text = result.get('result', 'No results found.')
+                    elif isinstance(result, tuple) and len(result) > 0:
+                        # If tuple, take first element as string
+                        result_text = str(result[0])
+                    else:
+                        result_text = str(result)
                 
                 # Cache successful result
                 cache_result(query_hash, result_text)
@@ -336,11 +353,10 @@ def process_scheme_query_with_retry(rag_chain, user_query, max_retries=3, enable
                         time.sleep(wait_time)
                         continue
                     else:
-                        result_text = f"Rate limit reached. Please wait a moment and try again. You can also try a more specific question to reduce processing time."
+                        result_text = "Rate limit reached. Please wait a moment and try again. You can also try a more specific question to reduce processing time."
                         break
                 
                 elif "Request too large" in error_str:
-                    # Try with a simpler, shorter query
                     if is_comprehensive_query and attempt == 0:
                         simplified_query = "list main government schemes"
                         try:
@@ -362,20 +378,38 @@ def process_scheme_query_with_retry(rag_chain, user_query, max_retries=3, enable
     
     # Generate TTS if enabled
     audio_html = ""
-    language_detected = "en"
-    cache_info = {"text_cache": "hit" if cached_result else "miss", "audio_cache": "disabled"}
+    language_detected = detected_lang  # Reuse detected language
+    cache_info = {
+        "text_cache": "hit" if cached_result else "miss",
+        "audio_cache": "disabled"
+    }
     
     if enable_tts and TTS_AVAILABLE:
         # Clean result text for TTS (remove cache prefixes and formatting)
         clean_text = re.sub(r'\[Cached\]|\[Simplified.*?\]', '', result_text).strip()
         clean_text = re.sub(r'[✅ℹ️🔍]', '', clean_text)  # Remove emojis
         
-        if len(clean_text) > 10:  # Only generate TTS for substantial text
-            audio_bytes, language_detected, audio_status = text_to_speech(clean_text, auto_detect=True)
-            cache_info["audio_cache"] = audio_status
-            
-            if audio_bytes:
-                audio_html = get_audio_player_html(audio_bytes, autoplay=autoplay)
+        if len(clean_text) > 10:
+            # ✅ FIXED: Correct unpacking of TTS result
+            try:
+                tts_result = text_to_speech(
+                    clean_text,
+                    lang=detected_lang,
+                    auto_detect=False
+                )
+                
+                # Properly unpack the tuple
+                if tts_result and len(tts_result) == 3:
+                    audio_bytes, language_detected, audio_status = tts_result
+                    cache_info["audio_cache"] = audio_status
+                    
+                    if audio_bytes:
+                        audio_html = get_audio_player_html(audio_bytes, autoplay=autoplay)
+                else:
+                    cache_info["audio_cache"] = "failed"
+            except Exception as e:
+                print(f"TTS Error: {e}")
+                cache_info["audio_cache"] = f"error: {str(e)}"
     
     return result_text, audio_html, language_detected, cache_info
 
@@ -421,7 +455,12 @@ def query_all_schemes_optimized(rag_chain):
                 time.sleep(1)  # rate limit protection
             
             result = rag_chain.invoke({"query": query})
-            content = result.get('result', '') if isinstance(result, dict) else str(result)
+            if isinstance(result, dict):
+                content = result.get('result', '')
+            elif isinstance(result, tuple) and len(result) > 0:
+                content = str(result[0])
+            else:
+                content = str(result)
             
             if content and content not in seen_texts and len(content.strip()) > 30:
                 seen_texts.add(content)
@@ -459,19 +498,6 @@ def query_all_schemes_optimized(rag_chain):
 def extract_schemes_from_text(content):
     """Helper function to extract schemes from text content"""
     return extract_all_scheme_names(content)
-
-def get_optimized_query_suggestions():
-    """
-    Rate-limit friendly query suggestions.
-    """
-    return [
-        "List main government schemes",  # Shorter, more focused
-        "सरकारी योजना नावे (Government scheme names)", 
-        "Top welfare schemes details",
-        "Health scheme information",
-        "Financial assistance programs",
-        "Eligibility criteria for schemes"
-    ]
 
 def get_model_options():
     """
@@ -577,12 +603,7 @@ def get_tts_settings():
         "supported_languages": {
             'en': 'English',
             'hi': 'Hindi',
-            'mr': 'Marathi', 
-            'gu': 'Gujarati',
-            'ta': 'Tamil',
-            'te': 'Telugu',
-            'kn': 'Kannada',
-            'bn': 'Bengali'
+            'mr': 'Marathi'
         },
         "cache_stats": {
             "audio_cache_size": len(_audio_cache),
@@ -605,44 +626,50 @@ def clear_text_cache():
 def generate_audio_response(text, language=None, lang_preference=None, speed=1.0, auto_detect=True):
     """
     Generate audio response for given text - updated to match rag_app.py expectations
-    Returns: (audio_data, detected_lang, cache_hit) tuple or dict based on usage
+    Returns: (audio_data, detected_lang, cache_hit) tuple
     """
     if not TTS_AVAILABLE:
         return None, 'en', False
-    
+
     try:
-        # Handle parameter compatibility
-        target_lang = language or lang_preference or 'auto'
-        
-        # Clean text for better TTS
-        clean_text = re.sub(r'\[.*?\]', '', text)  # Remove bracketed content
-        clean_text = re.sub(r'[✅ℹ️🔍⚠️]', '', clean_text)  # Remove emojis
-        clean_text = re.sub(r'\s+', ' ', clean_text).strip()  # Clean whitespace
-        
+        # Clean the input text
+        clean_text = re.sub(r'\[.*?\]', '', text)
+        clean_text = re.sub(r'[✅ℹ️🔍⚠️]', '', clean_text)
+        clean_text = re.sub(r'\s+', ' ', clean_text).strip()
+
         if len(clean_text) < 5:
-            return None, target_lang, False
-        
-        # Auto-detect language if needed
+            return None, 'en', False
+
+        # Step 1: Determine target language
+        target_lang = language or lang_preference or 'auto'
+        if not target_lang or target_lang == 'None':
+            target_lang = 'auto'
+
+        # Step 2: Detect language if needed
         if target_lang == 'auto' or auto_detect:
             detected_lang = detect_language(clean_text)
         else:
             detected_lang = target_lang
-        
-        # Generate TTS with caching
+
+        # Final fallback
+        if not detected_lang or detected_lang == 'None':
+            detected_lang = 'en'
+
+        # Step 3: Generate audio
         audio_bytes, final_lang, cache_status = text_to_speech(
-            clean_text, 
-            lang=detected_lang, 
-            auto_detect=auto_detect,
+            clean_text,
+            lang=detected_lang,
+            auto_detect=False,
             speed=speed
         )
-        
+
         cache_hit = cache_status == 'cached'
-        
+
         return audio_bytes, final_lang, cache_hit
-            
+
     except Exception as e:
         print(f"Error generating audio: {str(e)}")
-        return None, target_lang, False
+        return None, 'en', False
 
 def create_audio_player(audio_bytes, autoplay=False, controls=True):
     """
