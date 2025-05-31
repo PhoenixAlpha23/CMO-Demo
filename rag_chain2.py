@@ -40,31 +40,29 @@ def build_rag_chain_from_files(pdf_file, txt_file, groq_api_key):
         )
 
         prompt = PromptTemplate(
-            template=prompt = PromptTemplate(
-    template="""
-You are a government scheme assistant. You must answer based ONLY on the context provided below.
-Always structure your output like this if relevant information is available:
-Schemes:
-[scheme names and summaries]
+            template="""
+            You are a government scheme assistant. You must answer based ONLY on the context provided below.
+            Always structure your output like this if relevant information is available:
+            Schemes:
+            [scheme names and summaries]
 
-Websites (if any):
-[list any URLs related to the scheme]
+            Websites (if any):
+            [list any URLs related to the scheme]
 
-Helpline (if any):
-[mention phone numbers if present]
+            Helpline (if any):
+            [mention phone numbers if present]
 
-If no relevant information is found, say:
-"I don't have relevant information for this. You can contact 102/104 helpline numbers for details."
+            If no relevant information is found, say:
+            "I don't have relevant information for this. You can contact 102/104 helpline numbers for details."
 
-Use language that matches the user's question. Be helpful, concise, and complete.
+            Use language that matches the user's question. Be helpful, concise, and complete.
 
-Context:
-{context}
+            Context:
+            {context}
+            Question:
+            {question}
 
-Question:
-{question}
-
-Answer:
+             Answer:
 """,
     input_variables=["context", "question"]
 )
