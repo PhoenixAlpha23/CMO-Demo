@@ -12,7 +12,7 @@ from langchain_community.retrievers import TFIDFRetriever
 from langchain.prompts import PromptTemplate
 from langchain.globals import set_verbose
 
-TTS_AVAILABLE = True # added this to use older query processing function pre-break up
+TTS_AVAILABLE = True # added this to use older query processing function pre-refactoring
 # For language detection of the query
 try:
     from langdetect import detect, DetectorFactory
@@ -117,16 +117,22 @@ def build_rag_chain_from_files(pdf_file, txt_file, groq_api_key, enhanced_mode=T
         # Optimized prompt
         template = """You are a Knowledge Assistant designed for answering questions specifically from the knowledge base provided to you.
 
-Your task is as follows: give a detailed response for user query in the user language (eg. what are some schemes? --> Here is a list of some schemes)
+Your task is as follows: give a detailed response for the user query in the user language (e.g., "what are some schemes?" --> "Here is a list of some schemes").
 
-Ensure your response follows these styles and tone in your response:
-* Use direct, everyday language
-* Personal and friendly tone, same as the user's language
-* Favour detailed responses, with mentions of websites and headings such as description, eligibility or उद्देशः, अंतर्भूत घटकः
-* In case no relevant information is found, default your response to a phrase like "For more details contact on 104/102 helpline numbers."
-* In case of duplicate information, remove duplicates and provide a single response.
-* After providing the answer,ask for follow-up questions such as "Do you want to know about more schemes like this?" or "Do you want to know about the inclusion/exclusion criteria for this?"
-Your goal is to achieve the following: help a citizen understand about the schemes and its eligibility criteria.
+Ensure your response follows these styles and tone:
+* Every answer should be in the **same language** as the user query.
+* Use direct, everyday language.
+* Maintain a personal and friendly tone, aligned with the user's language.
+* Provide detailed responses, with references to websites and section headers like "Description", "Eligibility", or in Marathi: "उद्देशः", "अंतर्भूत घटकः".
+* If no relevant information is found, reply with: "For more details contact on 104/102 helpline numbers."
+* Remove duplicate information and provide only one consolidated answer.
+* **After providing the answer, ask a follow-up question in the same language as the user query.** 
+  Examples:
+  - If the input is in Hindi: "Koi schemes h kya?" --> "Haanji, aapko konsi schemes ke baare mein jaankari chahiye?"
+  - If the input is in Marathi: "माझ्यासाठी कोणती योजना लागू आहे?" --> "आपल्याला अशा आणखी योजनांची माहिती हवी आहे का?"
+  - If the input is in English: "What schemes are available?" --> "Would you like to know more about similar schemes?"
+
+Your goal is to help a citizen understand schemes and their eligibility criteria clearly.
 
 Here is the content you will work with: {context}
 
@@ -135,6 +141,7 @@ Question: {question}
 Now perform the task as instructed above.
 
 Answer:"""
+
         custom_prompt = PromptTemplate(
             template=template,
             input_variables=["context", "question"]
@@ -304,8 +311,6 @@ def extract_schemes_from_text(text_content):
 
 def query_all_schemes_optimized(rag_chain):
     """Optimized scheme extractor using targeted queries and regex."""
-    # This function now primarily uses `extract_schemes_from_text` on RAG output.
-    # It might make a broad query to get relevant context first.
     try:
         # A broad query to fetch relevant context containing scheme lists
         context_query = "Provide a comprehensive list of all government schemes, programs, and yojana mentioned in the documents."
@@ -337,9 +342,4 @@ def get_model_options():
             "name": "Llama 3.3 70B (High Quality)", 
             "description": "Better quality for complex queries, higher latency."
         }
-        # Add "llama-3.3-70b-versatile" if it's a model you plan to support
     }
-
-# Alias for backward compatibility if needed by older parts of the code not yet updated
-process_scheme_query = process_scheme_query_with_retry
-extract_all_scheme_names = extract_schemes_from_text # If the old one was different and this is the replacement
