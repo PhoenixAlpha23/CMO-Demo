@@ -123,8 +123,13 @@ def render_query_input(st_obj, whisper_client, transcribe_audio_func):
     if audio_value is not None:
         try:
             with st_obj.spinner("🎧 Transcribing audio..."):
-                user_text = transcribe_audio_func(whisper_client, audio_value.getvalue())
-            st_obj.success(f"🎧 Transcribed: {user_text}")
+                succes, transcription = user_text = transcribe_audio_func(whisper_client, audio_value.getvalue())
+                if not succes:
+                    st_obj.error(transcription)
+                    user_text=""
+                else:
+                    st_obj.success(f"🎧 Transcribed: {transcription}")
+                    user_text= transcription
         except Exception as e:
             st_obj.error(f"Transcription Error: {str(e)}")
     
