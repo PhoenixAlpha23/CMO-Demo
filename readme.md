@@ -1,6 +1,28 @@
 This is the Demo application for our CMRF AI project. You can view the application [here](https://cmrf-rag-agent.streamlit.app/).
 The knowledge base is used to provide information about various government schemes.
 
+```
+web/
+├── app.py                   # Main Streamlit application (renamed from rag_app2.py)
+├── core/
+│   ├── __init __.py
+│   ├── rag_services.py      # RAG chain building, query processing, scheme extraction
+│   ├── tts_services.py      # TTS generation, language detection, audio utilities
+│   ├── cache_manager.py     # Manages query and audio caches
+│   └── transcription.py     # Audio transcription logic
+├── ui/
+│   ├── __init __.py
+│   ├── sidebar.py           # Functions to build the sidebar
+│   ├── main_panel.py        # Functions for the main application layout (input, output, history)
+│   └── components.py        # Reusable UI components (e.g., audio player HTML)
+├── utils/
+│   ├── __init __.py
+│   ├── config.py            # Configuration loading (e.g., API keys)
+│   └── helpers.py           # General helper functions, constants
+├── .env                     # Environment variables
+└── requirements.txt         # Python dependencies
+```
+
 ## Features
 
 ### Speech-to-Text Functionality
@@ -33,25 +55,3 @@ The knowledge base is used to provide information about various government schem
 
 *   Add CRM autofill to our POC
 *   Train transformer model(RoBERT or BERT for error correction in audio transcriptions, especially Marathi and Hindi.)
-
-```
-web/
-├── app.py                   # Main Streamlit application (renamed from rag_app2.py)
-├── core/
-│   ├── __init __.py
-│   ├── rag_services.py      # RAG chain building, query processing, scheme extraction
-│   ├── tts_services.py      # TTS generation, language detection, audio utilities
-│   ├── cache_manager.py     # Manages query and audio caches
-│   └── transcription.py     # Audio transcription logic
-├── ui/
-│   ├── __init __.py
-│   ├── sidebar.py           # Functions to build the sidebar
-│   ├── main_panel.py        # Functions for the main application layout (input, output, history)
-│   └── components.py        # Reusable UI components (e.g., audio player HTML)
-├── utils/
-│   ├── __init __.py
-│   ├── config.py            # Configuration loading (e.g., API keys)
-│   └── helpers.py           # General helper functions, constants
-├── .env                     # Environment variables
-└── requirements.txt         # Python dependencies
-```
