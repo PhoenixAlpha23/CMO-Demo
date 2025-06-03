@@ -3,31 +3,121 @@ import pandas as pd # Required for chat history download
 import io # Required for chat history download
 import time # Required for chat history download/timestamp
 
+def inject_chat_styles():
+    """Injects CSS styles for the modern chat layout while maintaining original functionality."""
+    st.markdown("""
+    <style>
+    /* Updated styles to match reference UI while keeping original classes */
+    .chat-container {
+        max-height: 500px;
+        overflow-y: auto;
+        padding: 15px;
+        border: 1px solid #E5E5EA;
+        border-radius: 10px;
+        margin-bottom: 20px;
+        background-color: #FAFAFA;
+    }
+    .chat-bubble-user {
+        background-color: #007AFF;
+        color: white;
+        padding: 10px 15px;
+        border-radius: 18px 18px 0 18px;
+        margin: 8px 0;
+        text-align: right;
+        margin-left: 30%;
+        max-width: 70%;
+        word-wrap: break-word;
+    }
+    .chat-bubble-assistant {
+        background-color: #E5E5EA;
+        color: black;
+        padding: 10px 15px;
+        border-radius: 18px 18px 18px 0;
+        margin: 8px 0;
+        text-align: left;
+        margin-right: 30%;
+        max-width: 70%;
+        word-wrap: break-word;
+    }
+    /* New styles for the reference UI elements */
+    .suggestion-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-bottom: 20px;
+    }
+    .suggestion-button {
+        background-color: #F0F2F6;
+        border: 1px solid #D3D3D3;
+        border-radius: 20px;
+        padding: 8px 16px;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .file-info {
+        background-color: #F8F9FA;
+        border: 1px solid #E5E5EA;
+        border-radius: 8px;
+        padding: 15px;
+        margin-bottom: 20px;
+    }
+    .analysis-steps {
+        background-color: #F8F9FA;
+        border: 1px solid #E5E5EA;
+        border-radius: 8px;
+        padding: 15px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
 def render_file_uploaders(st_obj):
-    """Renders file uploaders for PDF and TXT files."""
+    """Renders file uploaders for PDF and TXT files - UNCHANGED"""
     st_obj.markdown("<h4 style='text-align: center;'>📄 कृपया योजनेचे तपशील फाइल अपलोड करा</h4>", unsafe_allow_html=True)
     uploaded_pdf = st_obj.file_uploader("स्किम तपशील पीडीएफ अपलोड करा", type=["pdf"])
     uploaded_txt = st_obj.file_uploader("आरोग्य योजना बुकलेट अपलोड करा", type=["txt"])
-    return uploaded_pdf, uploaded_txt
+    return uploaded_pdf, uploaded_txt  
 
 def render_query_input(st_obj, whisper_client, transcribe_audio_func):
-    """Renders text input and audio input for user queries."""
-    st_obj.markdown("### Ask a question by typing or using audio input")
-    col1, col2 = st_obj.columns([3, 1])
+    """Renders text input at bottom when chat exists, otherwise at top"""
+    # Only show input at top if no chat history exists
+    if not st_obj.session_state.get('chat_history', []):
+        st_obj.markdown("### Ask a question by typing or using audio input")
     
-    with col1:
-        default_value = st_obj.session_state.suggested_query if st_obj.session_state.suggested_query else ""
-        user_input = st_obj.text_input(
-            "Enter your question", 
-            key="text_input", 
-            placeholder="e.g. मुख्य योजना दाखवा / Show main schemes...",
-            value=default_value
-        )
-        if st_obj.session_state.suggested_query:
-            st_obj.session_state.suggested_query = ""
+    # This container will hold our input and float to bottom
+    input_container = st_obj.container()
     
-    with col2:
-        audio_value = st.audio_input("🎤 Record your query")
+    with input_container:
+        col1, col2 = st_obj.columns([3, 1])
+        
+        with col1:
+            default_value = st_obj.session_state.suggested_query if st_obj.session_state.suggested_query else ""
+            user_input = st_obj.text_input(
+                "Enter your question", 
+                key="text_input", 
+                placeholder="e.g. मुख्य योजना दाखवा / Show main schemes...",
+                label_visibility="collapsed"
+            )
+            if st_obj.session_state.suggested_query:
+                st_obj.session_state.suggested_query = ""
+        
+        with col2:
+            audio_value = st.audio_input("🎤 Record your query", key="audio_input")
+
+    # CSS to make input stick to bottom when chat exists
+    if st_obj.session_state.get('chat_history', []):
+        st_obj.markdown("""
+        <style>
+        [data-testid="stVerticalBlock"]:has(> div:last-child > .stContainer) {
+            position: fixed;
+            bottom: 50px;
+            width: calc(100% - 2rem);
+            background: white;
+            padding: 1rem;
+            z-index: 100;
+            border-top: 1px solid #eee;
+        }
+        </style>
+        """, unsafe_allow_html=True)
 
     user_text = None
     if audio_value is not None:
@@ -37,9 +127,13 @@ def render_query_input(st_obj, whisper_client, transcribe_audio_func):
             st_obj.success(f"🎧 Transcribed: {user_text}")
         except Exception as e:
             st_obj.error(f"Transcription Error: {str(e)}")
-            
-    return user_input, user_text
-
+    
+    if user_input:
+        st_obj.session_state.last_user_input = user_input
+    elif user_text:
+        st_obj.session_state.last_user_input = user_text
+        
+    return user_input, user_text  # Same return as before
 def render_answer_section(
     st_obj, 
     assistant_reply, 
@@ -51,22 +145,28 @@ def render_answer_section(
     allowed_tts_langs_set,
     tts_available_flag
 ):
-    """Displays the assistant's answer and TTS audio player."""
-    st_obj.markdown("### 📋 Answer:")
+    """Displays the assistant's answer and TTS audio player in chatbot style."""
     
     is_cached = assistant_reply.startswith("[Cached]") if isinstance(assistant_reply, str) else False
-    if is_cached:
-        st_obj.info("🚀 This result was retrieved from cache (faster response)")
-        clean_reply = assistant_reply.replace("[Cached] ", "")
-    else:
-        clean_reply = assistant_reply
-    
+    clean_reply = assistant_reply.replace("[Cached] ", "") if is_cached else assistant_reply
+
+    # Chat UI Style
+    st_obj.markdown('<div class="chat-container">', unsafe_allow_html=True)
+    if 'last_user_input' in st_obj.session_state and st_obj.session_state.last_user_input:
+        st_obj.markdown(
+            f'<div class="chat-bubble-user">🧑 {st_obj.session_state.last_user_input}</div>',
+            unsafe_allow_html=True
+        )
     st_obj.markdown(
-        f"<div style='background-color:#E8F5E9; padding:15px; border-radius:8px; margin-bottom:15px; border-left: 4px solid #4CAF50;'>"
-        f"<b>🤖 Assistant:<br><br>{clean_reply}</div>", 
+        f'<div class="chat-bubble-assistant">🤖 {clean_reply}</div>',
         unsafe_allow_html=True
     )
-    
+    st_obj.markdown('</div>', unsafe_allow_html=True)
+
+    if is_cached:
+        st_obj.info("🚀 This result was retrieved from cache (faster response)")
+
+    # TTS Section
     if tts_available_flag:
         with st_obj.spinner("🔊 Generating voice response..."):
             try:
@@ -100,7 +200,7 @@ def render_answer_section(
                     st_obj.warning("⚠️ Could not generate audio for this response.")
             except Exception as audio_error:
                 st_obj.warning(f"🔊 TTS Error: {audio_error}")
-    elif clean_reply.strip(): # If TTS not available but there's text
+    elif clean_reply.strip(): 
         st_obj.info("ℹ️ TTS is not available. Text response is shown above.")
 
 
