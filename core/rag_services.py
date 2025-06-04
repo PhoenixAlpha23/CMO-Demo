@@ -289,7 +289,7 @@ def extract_schemes_from_text(text_content):
     # More comprehensive patterns, including common Marathi and English scheme indicators
     # Order matters: more specific patterns first
     patterns = [
-        r'\b(?:[A-Z][\w\'-]+(?: [A-Z][\w\'-]+)* )?(?:Scheme|Yojana|Karyakram|Abhiyan|Mission|Initiative|Programme|Policy|Fund|Card| योजना|कार्यक्रम|अभियान|मिशन|धोरण|निधी|कार्ड)\b',
+        r'\b(?￼A-Z][\w\'-]+(?: [A-Z][\w\'-]+)* )?(?:योजना|कार्यक्रम|अभियान|मिशन|धोरण|निधी|कार्ड|Scheme|Yojana|Programme|Abhiyan|Mission|Initiative|Program|Policy|Fund|Card)\b',
         r'\b(?:Pradhan Mantri|Mukhyamantri|CM|PM|National|Rashtriya|State|Rajya|प्रधानमंत्री|मुख्यमंत्री|राष्ट्रीय|राज्य) (?:[A-Z][\w\'-]+ ?)+', # Schemes starting with titles
         r'\b[A-Z]{2,}(?:-[A-Z]{2,})? Scheme\b', # Acronym schemes like JSY Scheme
         r'\b(?:[०-९]+|[0-9]+)\.\s+([A-Z][\w\s\'-]+(?:योजना|Scheme|कार्यक्रम|Karyakram|अभियान|Abhiyan))', # Numbered list items
