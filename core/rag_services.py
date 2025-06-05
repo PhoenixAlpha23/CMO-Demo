@@ -3,7 +3,8 @@ import os
 import time
 import hashlib
 import re
-
+import langid
+from core.transcription import SUPPORTED_LANGUAGES  
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.chains import RetrievalQA
@@ -12,7 +13,7 @@ from langchain_community.retrievers import TFIDFRetriever
 from langchain.prompts import PromptTemplate
 from langchain.globals import set_verbose
 
-TTS_AVAILABLE = True # added this to use older query processing function pre-refactoring
+TTS_AVAILABLE = True # added this to use older query processing function pre-break up
 # For language detection of the query
 try:
     from langdetect import detect, DetectorFactory
@@ -50,6 +51,11 @@ def clear_query_cache():
     global _query_cache
     _query_cache.clear()
     print("RAG query cache cleared.")
+
+def detect_language(text):
+    """Return the ISO 639-1 language code and full language name, if supported."""
+    lang, _ = langid.classify(text)
+    return lang, SUPPORTED_LANGUAGES.get(lang, "Unsupported")
 
 # --- RAG Chain Building ---
 def build_rag_chain_from_files(pdf_file, txt_file, groq_api_key, enhanced_mode=True, model_choice="llama-3.1-8b-instant"):
@@ -123,14 +129,16 @@ Ensure your response follows these styles and tone:
 * Every answer should be in the **same language** as the user query.
 * Use direct, everyday language.
 * Maintain a personal and friendly tone, aligned with the user's language.
-* Provide detailed responses, with references to websites and section headers like "Description", "Eligibility", or in Marathi: "उद्देशः", "अंतर्भूत घटकः".
+* Provide detailed responses, with references to websites and section headers like "Description", "Eligibility", or for Marathi: "उद्देशः", "अंतर्भूत घटकः".
 * If no relevant information is found, reply with: "For more details contact on 104/102 helpline numbers."
 * Remove duplicate information and provide only one consolidated answer.
 * **After providing the answer, ask a follow-up question in the same language as the user query.** 
   Examples:
-  - If the input is in Hindi: "Koi schemes h kya?" --> "Haanji, aapko konsi schemes ke baare mein jaankari chahiye?"
-  - If the input is in Marathi: "माझ्यासाठी कोणती योजना लागू आहे?" --> "आपल्याला अशा आणखी योजनांची माहिती हवी आहे का?"
-  - If the input is in English: "What schemes are available?" --> "Would you like to know more about similar schemes?"
+  - If the input is in English: "What is NACP?" --> "Would you like to know the eligibility criteria of NACP?"
+  - If the input is in Marathi: "PMSMA चे मुख्य उद्दिष्ट काय आहे?" --> "तुम्हाला PMSMA पात्रतेबद्दल जाणून घ्यायचे आहे का?"
+  - If the input is in Hindi: " PMJAY kya h??" --> "Kya apko PMJAY ke eligibility ke baare mein jaankari chahiye?"
+  
+  
 
 Your goal is to help a citizen understand schemes and their eligibility criteria clearly.
 
@@ -289,7 +297,7 @@ def extract_schemes_from_text(text_content):
     # More comprehensive patterns, including common Marathi and English scheme indicators
     # Order matters: more specific patterns first
     patterns = [
-        r'\b(?￼A-Z][\w\'-]+(?: [A-Z][\w\'-]+)* )?(?:योजना|कार्यक्रम|अभियान|मिशन|धोरण|निधी|कार्ड|Scheme|Yojana|Programme|Abhiyan|Mission|Initiative|Program|Policy|Fund|Card)\b',
+        r'\b(?:[A-Z][\w\'-]+(?: [A-Z][\w\'-]+)* )?(?:योजना|कार्यक्रम|अभियान|मिशन|धोरण|निधी|कार्ड|Scheme|Yojana|Programme|Abhiyan|Mission|Initiative|Program|Policy|Fund|Card)\b',
         r'\b(?:Pradhan Mantri|Mukhyamantri|CM|PM|National|Rashtriya|State|Rajya|प्रधानमंत्री|मुख्यमंत्री|राष्ट्रीय|राज्य) (?:[A-Z][\w\'-]+ ?)+', # Schemes starting with titles
         r'\b[A-Z]{2,}(?:-[A-Z]{2,})? Scheme\b', # Acronym schemes like JSY Scheme
         r'\b(?:[०-९]+|[0-9]+)\.\s+([A-Z][\w\s\'-]+(?:योजना|Scheme|कार्यक्रम|Karyakram|अभियान|Abhiyan))', # Numbered list items
@@ -338,7 +346,7 @@ def get_model_options():
             "name": "Llama 3.1 8B (Fast & Efficient)", 
             "description": "Best for quick queries, good for most tasks."
         },
-        "llama-3.3-70b-versatile": { # Assuming this is a valid model you might use
+        "llama-3.3-70b-versatile": {
             "name": "Llama 3.3 70B (High Quality)", 
             "description": "Better quality for complex queries, higher latency."
         }
