@@ -26,6 +26,14 @@ set_verbose(True) # Optional: for Langchain verbosity
 _query_cache = {}
 _cache_max_size = 50
 
+# Enhanced context storage for conversational flow
+_conversation_context = {
+    'previous_question': None,
+    'last_response': None,
+    'suggested_followup': None,
+    'scheme_mentioned': None
+}
+
 def get_query_hash(query_text):
     """Generate a hash for caching queries"""
     return hashlib.md5(query_text.encode()).hexdigest()
@@ -51,6 +59,128 @@ def clear_query_cache():
     global _query_cache
     _query_cache.clear()
     print("RAG query cache cleared.")
+
+def set_previous_question_context(question):
+    """Set the previous question to be used as context for the next query"""
+    global _conversation_context
+    _conversation_context['previous_question'] = question
+
+def get_previous_question_context():
+    """Get the previous question context"""
+    global _conversation_context
+    return _conversation_context['previous_question']
+
+def clear_previous_question_context():
+    """Clear the previous question context"""
+    global _conversation_context
+    _conversation_context = {
+        'previous_question': None,
+        'last_response': None,
+        'suggested_followup': None,
+        'scheme_mentioned': None
+    }
+    print("Previous question context cleared.")
+
+def update_conversation_context(question, response):
+    """Update the full conversation context including extracting follow-up suggestions"""
+    global _conversation_context
+    
+    _conversation_context['previous_question'] = question
+    _conversation_context['last_response'] = response
+    
+    # Extract suggested follow-up and scheme mentioned
+    followup_info = extract_followup_suggestion(response)
+    _conversation_context['suggested_followup'] = followup_info.get('suggestion')
+    _conversation_context['scheme_mentioned'] = followup_info.get('scheme')
+
+def extract_followup_suggestion(response_text):
+    """Extract follow-up suggestion and scheme name from AI response"""
+    # Patterns to match follow-up questions in different languages
+    patterns = [
+        # English patterns
+        r'(?:Would you like to know|Do you want to know|Want to know more about)\s+(?:about\s+)?(?:the\s+)?(eligibility criteria?|benefits|details|application process)\s+(?:of\s+|for\s+)?([A-Z][A-Za-z\s\-\.]+?)(?:\?|$)',
+        r'(?:Would you like to know|Do you want to know)\s+([A-Z][A-Za-z\s\-\.]+?)\s+(eligibility|benefits|details)(?:\?|$)',
+        
+        # Hindi patterns  
+        r'(?:क्या आपको|आपको)\s+([A-Za-z\s\-\.]+?)\s+(?:की\s+|के\s+)?(पात्रता|लाभ|विवरण|जानकारी)\s+(?:के\s+बारे\s+में\s+)?जानना चाहिए(?:\?|$)',
+        r'(?:क्या आपको|आपको)\s+([A-Za-z\s\-\.]+?)\s+(?:eligibility|benefits)\s+(?:के\s+बारे\s+में\s+)?जानकारी चाहिए(?:\?|$)',
+        
+        # Marathi patterns
+        r'(?:तुम्हाला|तुला)\s+([A-Za-z\s\-\.]+?)\s+(?:च्या\s+|चे\s+)?(पात्रता|लाभ|तपशील)(?:बद्दल|बाबत)\s+जाणून घ्यायचे आहे का(?:\?|$)',
+        r'(?:तुम्हाला|तुला)\s+([A-Za-z\s\-\.]+?)\s+(?:eligibility|benefits)(?:बद्दल|बाबत)\s+जाणून घ्यायचे आहे का(?:\?|$)'
+    ]
+    
+    for pattern in patterns:
+        match = re.search(pattern, response_text, re.IGNORECASE)
+        if match:
+            groups = match.groups()
+            if len(groups) >= 2:
+                scheme = groups[-1].strip()  # Last group is usually the scheme name
+                suggestion_type = groups[-2].strip() if len(groups) > 1 else "details"
+            else:
+                scheme = groups[0].strip()
+                suggestion_type = "details"
+            
+            # Clean up scheme name
+            scheme = re.sub(r'[^\w\s\-\.]', '', scheme).strip()
+            
+            return {
+                'suggestion': suggestion_type,
+                'scheme': scheme,
+                'full_match': match.group(0)
+            }
+    
+    return {'suggestion': None, 'scheme': None, 'full_match': None}
+
+def detect_affirmative_response(user_input):
+    """Detect if user input is an affirmative response"""
+    user_input = user_input.lower().strip()
+    
+    # Affirmative responses in different languages
+    affirmative_patterns = [
+        # English
+        r'^(yes|yeah|yep|sure|okay|ok|alright|right|correct|exactly)$',
+        r'^(tell me|show me|i want to know|please)$',
+        
+        # Hindi  
+        r'^(हाँ|हा|जी|हां|सही|ठीक|बताओ|बताइए|जानना चाहता हूं|जानना चाहती हूं)$',
+        
+        # Marathi
+        r'^(होय|हो|बरं|ठीक|सांगा|सांगू|जाणून घ्यायचं आहे|जाणून घेऊ इच्छितो)$'
+    ]
+    
+    for pattern in affirmative_patterns:
+        if re.match(pattern, user_input):
+            return True
+    
+    return False
+
+def process_contextual_query(user_query):
+    """Process user query considering conversation context and affirmative responses"""
+    global _conversation_context
+    
+    # Check if this is an affirmative response to a previous suggestion
+    if detect_affirmative_response(user_query):
+        suggestion = _conversation_context.get('suggested_followup')
+        scheme = _conversation_context.get('scheme_mentioned')
+        
+        if suggestion and scheme:
+            # Convert affirmative response to explicit query
+            if suggestion in ['eligibility', 'पात्रता']:
+                processed_query = f"What are the eligibility criteria for {scheme}?"
+            elif suggestion in ['benefits', 'लाभ']:
+                processed_query = f"What are the benefits of {scheme}?"
+            elif suggestion in ['details', 'विवरण', 'तपशील']:
+                processed_query = f"Tell me more details about {scheme}"
+            elif suggestion in ['application', 'application process']:
+                processed_query = f"How to apply for {scheme}?"
+            else:
+                processed_query = f"Tell me about {suggestion} of {scheme}"
+            
+            print(f"[Context] Converted '{user_query}' to '{processed_query}'")
+            return processed_query, True
+    
+    return user_query, False
 
 def detect_language(text):
     """Return the ISO 639-1 language code and full language name, if supported."""
@@ -120,10 +250,12 @@ def build_rag_chain_from_files(pdf_file, txt_file, groq_api_key, enhanced_mode=T
             max_tokens=max_tokens
         )
         
-        # Optimized prompt
+        # Updated prompt to include previous question context
         template = """You are a Knowledge Assistant designed for answering questions specifically from the knowledge base provided to you.
 
 Your task is as follows: give a detailed response for the user query in the user language (e.g., "what are some schemes?" --> "Here is a list of some schemes").
+
+{previous_context}
 
 Ensure your response follows these styles and tone:
 * Every answer should be in the **same language** as the user query.
@@ -152,7 +284,7 @@ Answer:"""
 
         custom_prompt = PromptTemplate(
             template=template,
-            input_variables=["context", "question"]
+            input_variables=["context", "question", "previous_context"]
         )
         chain_kwargs = {"prompt": custom_prompt}
         
@@ -208,9 +340,12 @@ def process_scheme_query_with_retry(rag_chain, user_query, max_retries=3, enable
     Process query with rate limit handling, caching, and optional TTS.
     Returns: (text_result, audio_html, language_detected, cache_info)
     """
+    # Process contextual query (handle "yes" responses)
+    processed_query, was_converted = process_contextual_query(user_query)
+    
     # Detect language and enforce allowed languages for text processing
     supported_languages = {"en", "hi", "mr"}
-    detected_lang = detect_language(user_query)
+    detected_lang = detect_language(processed_query)
     if detected_lang not in supported_languages:
         return (
             "⚠️ Sorry, only Marathi, Hindi, and English are supported. कृपया मराठी, हिंदी अथवा इंग्रजी भाषेत विचारा.",
@@ -219,12 +354,14 @@ def process_scheme_query_with_retry(rag_chain, user_query, max_retries=3, enable
             {"text_cache": "skipped", "audio_cache": "not_generated"}
         )
 
-    # Check cache first
-    query_hash = get_query_hash(user_query.lower().strip())
+    # Check cache first (use processed query for cache)
+    query_hash = get_query_hash(processed_query.lower().strip())
     cached_result = get_cached_result(query_hash)
     if cached_result:
         result_text = f"[Cached] {cached_result}"
         cache_status = "cached"
+        # Still update context even for cached results
+        update_conversation_context(user_query, result_text)
     else:
         cache_status = "not_cached"
         # Check for comprehensive queries
@@ -233,14 +370,26 @@ def process_scheme_query_with_retry(rag_chain, user_query, max_retries=3, enable
             "total schemes", "how many schemes", "scheme names", "सर्व", "यादी"
         ]
         
-        is_comprehensive_query = any(keyword in user_query.lower() for keyword in comprehensive_keywords)
+        is_comprehensive_query = any(keyword in processed_query.lower() for keyword in comprehensive_keywords)
         
         for attempt in range(max_retries):
             try:
                 if is_comprehensive_query:
                     result_text = query_all_schemes_optimized(rag_chain)
                 else:
-                    result = rag_chain.invoke({"query": user_query})
+                    # Get previous question context
+                    previous_question = get_previous_question_context()
+                    previous_context = ""
+                    if previous_question and not was_converted:  # Don't show previous context if we converted "yes"
+                        previous_context = f"Previous question context: {previous_question}\nPlease consider this context when answering the current question if it's related.\n"
+                    
+                    # Prepare the query with context
+                    query_data = {
+                        "question": processed_query,
+                        "previous_context": previous_context
+                    }
+                    
+                    result = rag_chain.invoke(query_data)
                     if isinstance(result, dict):
                         result_text = result.get('result', 'No results found.')
                     elif isinstance(result, tuple) and len(result) > 0:
@@ -252,6 +401,9 @@ def process_scheme_query_with_retry(rag_chain, user_query, max_retries=3, enable
                 # Cache successful result
                 cache_result(query_hash, result_text)
                 cache_status = "cached"
+                
+                # Update conversation context with original user query and AI response
+                update_conversation_context(user_query, result_text)
                 break
                 
             except Exception as e:
@@ -270,9 +422,20 @@ def process_scheme_query_with_retry(rag_chain, user_query, max_retries=3, enable
                     if is_comprehensive_query and attempt == 0:
                         simplified_query = "list main government schemes"
                         try:
-                            result = rag_chain.invoke({"query": simplified_query})
+                            previous_question = get_previous_question_context()
+                            previous_context = ""
+                            if previous_question and not was_converted:
+                                previous_context = f"Previous question context: {previous_question}\nPlease consider this context when answering the current question if it's related.\n"
+                            
+                            query_data = {
+                                "question": simplified_query,
+                                "previous_context": previous_context
+                            }
+                            result = rag_chain.invoke(query_data)
                             result_text = result.get('result', 'No results found.')
                             result_text = f"[Simplified due to size limits] {result_text}"
+                            # Update conversation context
+                            update_conversation_context(user_query, result_text)
                             break
                         except:
                             pass
@@ -320,10 +483,29 @@ def extract_schemes_from_text(text_content):
 def query_all_schemes_optimized(rag_chain):
     """Optimized scheme extractor using targeted queries and regex."""
     try:
-        # A broad query to fetch relevant context containing scheme lists
         context_query = "Provide a comprehensive list of all government schemes, programs, and yojana mentioned in the documents."
-        response = rag_chain.invoke({"query": context_query})
-        content_to_parse = response.get('result', '')
+        
+        previous_question = get_previous_question_context()
+        previous_context = ""
+        if previous_question:
+            previous_context = f"Previous question context: {previous_question}\nPlease consider this context when answering the current question if it's related.\n"
+        
+        query_data = {
+            "question": context_query,
+            "previous_context": previous_context
+        }
+        
+        response = rag_chain.invoke(query_data)
+        
+        # Handle different response types
+        if isinstance(response, dict):
+            content_to_parse = response.get('result', '')
+        elif isinstance(response, str):
+            content_to_parse = response
+        elif isinstance(response, tuple) and len(response) > 0:
+            content_to_parse = str(response[0])
+        else:
+            content_to_parse = str(response)
         
         all_extracted_schemes = extract_schemes_from_text(content_to_parse)
 
