@@ -163,7 +163,7 @@ def render_answer_section(
             unsafe_allow_html=True
         )
     st_obj.markdown(
-        f'<div class="chat-bubble-assistant">🤖 {clean_reply}</div>',
+        f'<div class="chat-bubble-assistant">🤖- {clean_reply}</div>',
         unsafe_allow_html=True
     )
     st_obj.markdown('</div>', unsafe_allow_html=True)
