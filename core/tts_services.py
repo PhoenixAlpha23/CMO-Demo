@@ -95,8 +95,8 @@ def generate_audio_response(text, lang_preference=None, speed=1.0, audio_cache=N
 
     try:
         # Clean the input text
-        clean_text = re.sub(r'\[.*?\]', '', text)
-        clean_text = re.sub(r'[✅ℹ️🔍⚠️*●#]', '', clean_text)
+        clean_text = re.sub(r'\[.*?\/]', '', text)
+        clean_text = re.sub(r'[✅ℹ️🔍⚠️*●#=]', '', clean_text)
         clean_text = re.sub(r'\s+', ' ', clean_text).strip()
 
         if len(clean_text) < 5: # Min length for meaningful TTS
