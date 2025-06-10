@@ -189,7 +189,7 @@ def render_answer_section(
                 if audio_data:
                     lang_display = lang_code_to_name_map.get(lang_used_for_tts, str(lang_used_for_tts).capitalize())
                     cache_indicator = "🧠 (Cached)" if cache_hit else "🆕 (Generated)"
-                    st_obj.info(f"🔊 Voice: {lang_display}{speed_info} | {cache_indicator}")
+                    st_obj.info(f"🔊 Voice: {lang_display} | {cache_indicator}")
                     
                     audio_html = create_audio_player_html_func(
                         audio_data,
