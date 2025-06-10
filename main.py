@@ -51,7 +51,7 @@ def main():
 
     # Sidebar Settings
     model_options = get_model_options()
-    selected_model, enhanced_mode, tts_speed, voice_lang_pref = render_sidebar(
+    selected_model, enhanced_mode, voice_lang_pref = render_sidebar(
         st, 
         model_options, 
         lambda: safe_get_cache_stats(get_audio_cache_stats), # Pass a callable for safe_get_cache_stats
@@ -144,8 +144,7 @@ def main():
                     st, 
                     assistant_reply, 
                     partial_generate_audio, # Pass the pre-configured TTS function
-                    create_audio_player_html,
-                    tts_speed, 
+                    create_audio_player_html, 
                     voice_lang_pref,
                     LANG_CODE_TO_NAME,
                     ALLOWED_TTS_LANGS,
@@ -166,7 +165,6 @@ def main():
         time, 
         partial_generate_audio, # Pass the pre-configured TTS function
         create_audio_player_html, 
-        tts_speed, 
         voice_lang_pref,
         TTS_AVAILABLE, # Pass TTS availability status
         LANG_CODE_TO_NAME,
