@@ -1,4 +1,3 @@
-
 import tempfile
 import os
 import time
@@ -13,6 +12,7 @@ from langchain_groq import ChatGroq
 from langchain_community.retrievers import TFIDFRetriever
 from langchain.prompts import PromptTemplate
 from langchain.globals import set_verbose
+from langchain.callbacks.base import BaseCallbackHandler
 
 TTS_AVAILABLE = True # added this to use older query processing function pre-break up
 # For language detection of the query
@@ -114,43 +114,43 @@ def build_rag_chain_from_files(pdf_file, txt_file, groq_api_key, enhanced_mode=T
             
         retriever = TFIDFRetriever.from_documents(splits, k=min(max_chunks, len(splits)))
 
-        llm = ChatGroq(
-            api_key=groq_api_key, 
-            model=model_choice,
-            temperature=0.05, # Slightly more deterministic
-            max_tokens=max_tokens
-        )
-        
-        # Optimized prompt
         template = """You are a Knowledge Assistant designed for answering questions specifically from the knowledge base provided to you.
-
 Your task is as follows: give a detailed response for the user query in the user language (e.g., "what are some schemes?" --> "Here is a list of some schemes").
-
 Ensure your response follows these styles and tone:
+* ONLY use information present in the context
+* If the information is not in the context, say "I cannot find information about this in the provided documents. Please contact 104/102 helpline numbers for assistance."
 * Always answer in the **same language as the user's question**, regardless of the language of the source documents.
 * If the source documents are in Marathi and the question is in English, **translate and summarize the information into English**.
+* Do not make assumptions or add external knowledge
 * If the question is in Marathi, answer in Marathi.
 * Use direct, everyday language.
 * Maintain a personal and friendly tone, aligned with the user's language.
 * Provide detailed responses, with **toll free numbers** and website links wherever applicable. Use section headers like "Description", "Eligibility", or for Marathi: "उद्देशः", "अंतर्भूत घटकः".
-* If no relevant information is found, reply with: "For more details contact on 104/102 helpline numbers."
+* If you're unsure or the information is not in the context say "For more details contact on 104/102 helpline numbers."
+* **Do not repeat the question in your answer.**
+* Mention context relevant websites and helpline numbers when available.
 * **Remove duplicate information and provide only one consolidated answer.**
-
 Your goal is to help a citizen understand schemes and their eligibility criteria clearly.
-
 Here is the content you will work with: {context}
-
 Question: {question}
-
 Now perform the task as instructed above.
-
 Answer:"""
-
         custom_prompt = PromptTemplate(
             template=template,
             input_variables=["context", "question"]
         )
-        chain_kwargs = {"prompt": custom_prompt}
+        chain_kwargs = {
+            "prompt": custom_prompt,
+            "verbose": True,  # For debugging
+        }
+        
+        llm = ChatGroq(
+            api_key=groq_api_key, 
+            model=model_choice,
+            temperature=0.05,  # Keep it deterministic
+            max_tokens=max_tokens,
+            callbacks=[StrictContextCallback()]  # Add a custom callback to monitor responses
+        )
         
         return RetrievalQA.from_chain_type(
             llm=llm,
@@ -347,3 +347,23 @@ def get_model_options():
             "description": "Better quality for complex queries, higher latency."
         }
     }
+
+class StrictContextCallback(BaseCallbackHandler):
+    """Callback to monitor and log RAG responses"""
+    
+    def on_chain_end(self, outputs, **kwargs):
+        """Check if response might contain external knowledge"""
+        response = outputs.get("result", "")
+        suspicious_phrases = [
+            "I believe",
+            "generally",
+            "typically",
+            "in most cases",
+            "commonly",
+            "as per my knowledge",
+            "based on my understanding"
+        ]
+        
+        for phrase in suspicious_phrases:
+            if phrase.lower() in response.lower():
+                print(f"Warning: Response may contain external knowledge. Suspicious phrase: {phrase}")
