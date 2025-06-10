@@ -158,11 +158,11 @@ def render_answer_section(
     st_obj.markdown('<div class="chat-container">', unsafe_allow_html=True)
     if 'last_user_input' in st_obj.session_state and st_obj.session_state.last_user_input:
         st_obj.markdown(
-            f'<div class="chat-bubble-user">🤓{st_obj.session_state.last_user_input}</div>',
+            f'<div class="chat-bubble-user">🤓  {st_obj.session_state.last_user_input}</div>',
             unsafe_allow_html=True
         )
     st_obj.markdown(
-        f'<div class="chat-bubble-assistant">🤖{clean_reply}</div>',
+        f'<div class="chat-bubble-assistant">🤖  {clean_reply}</div>',
         unsafe_allow_html=True
     )
     st_obj.markdown('</div>', unsafe_allow_html=True)
