@@ -144,7 +144,6 @@ def render_answer_section(
     assistant_reply, 
     generate_audio_func, 
     create_audio_player_html_func,
-    tts_speed, 
     voice_lang_pref,
     lang_code_to_name_map,
     allowed_tts_langs_set,
@@ -177,8 +176,7 @@ def render_answer_section(
             try:
                 audio_data, lang_used_for_tts, cache_hit = generate_audio_func(
                     text=clean_reply,
-                    lang_preference=voice_lang_pref,
-                    speed=tts_speed
+                    lang_preference=voice_lang_pref
                 )
 
                 if voice_lang_pref != 'auto' and voice_lang_pref != lang_used_for_tts:
@@ -191,7 +189,6 @@ def render_answer_section(
                 if audio_data:
                     lang_display = lang_code_to_name_map.get(lang_used_for_tts, str(lang_used_for_tts).capitalize())
                     cache_indicator = "🧠 (Cached)" if cache_hit else "🆕 (Generated)"
-                    speed_info = f" | Speed: {tts_speed}x"
                     st_obj.info(f"🔊 Voice: {lang_display}{speed_info} | {cache_indicator}")
                     
                     audio_html = create_audio_player_html_func(
@@ -216,7 +213,6 @@ def render_chat_history(
     time_module,
     generate_audio_func,
     create_audio_player_html_func,
-    tts_speed,
     voice_lang_pref,
     tts_available_flag,
     lang_code_to_name_map,
@@ -249,8 +245,7 @@ def render_chat_history(
                                 try:
                                     audio_data_hist, lang_used_hist, cache_hit_hist = generate_audio_func(
                                         text=clean_text_hist,
-                                        lang_preference=voice_lang_pref,
-                                        speed=tts_speed
+                                        lang_preference=voice_lang_pref
                                     )
 
                                     if audio_data_hist:
