@@ -1,5 +1,6 @@
 This is the Demo application for our CMRF AI project. You can view the application [here](https://raghu-cmrf.streamlit.app/).
-The knowledge base is used to provide information about various government schemes.
+The knowledge base is used to provide information about various government schemes, in english and marathi.
+
 
 ```
 web/
