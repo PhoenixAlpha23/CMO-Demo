@@ -120,7 +120,7 @@ def build_rag_chain_from_files(pdf_file, txt_file, groq_api_key, enhanced_mode=T
 Your task is as follows: give a detailed response for the user query in the user language (e.g., "what are some schemes?" --> "Here is a list of some schemes").
 
 Ensure your response follows these styles and tone:
-* Always answer in the **same language as the user's question**, regardless of the language of the source documents.
+* Always answer in the **same language ** as the Question**, regardless of the language of the source documents.
 * If the source documents are in Marathi and the question is in English, **translate and summarize the information into English**.
 * If the question is in Marathi, answer in Marathi. Do the same for English and Hindi.
 * Use direct, everyday language.
