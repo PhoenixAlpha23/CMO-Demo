@@ -13,6 +13,7 @@ from langchain_groq import ChatGroq
 from langchain_community.retrievers import TFIDFRetriever
 from langchain.prompts import PromptTemplate
 from langchain.globals import set_verbose
+from langchain.callbacks.base import BaseCallbackHandler
 
 TTS_AVAILABLE = True # added this to use older query processing function pre-break up
 # For language detection of the query
@@ -59,7 +60,7 @@ def detect_language(text):
     return lang, SUPPORTED_LANGUAGES.get(lang, "Unsupported")
 
 # --- RAG Chain Building ---
-def build_rag_chain_from_files(pdf_file, txt_file, groq_api_key, enhanced_mode=True, model_choice="llama-3.1-8b-instant"):
+def build_rag_chain_from_files(pdf_file, txt_file, groq_api_key, enhanced_mode=True, model_choice="llama-3.3-70b-versatile"):
     """
     Build a RAG chain from PDF and/or TXT files.
     This function is kept for potential direct use or as a base.
@@ -114,14 +115,6 @@ def build_rag_chain_from_files(pdf_file, txt_file, groq_api_key, enhanced_mode=T
             
         retriever = TFIDFRetriever.from_documents(splits, k=min(max_chunks, len(splits)))
 
-        llm = ChatGroq(
-            api_key=groq_api_key, 
-            model=model_choice,
-            temperature=0.05, # Slightly more deterministic
-            max_tokens=max_tokens
-        )
-        
-        # Optimized prompt
         template = """You are a Knowledge Assistant designed for answering questions specifically from the knowledge base provided to you.
 
 Your task is as follows: give a detailed response for the user query in the user language (e.g., "what are some schemes?" --> "Here is a list of some schemes").
@@ -129,13 +122,13 @@ Your task is as follows: give a detailed response for the user query in the user
 Ensure your response follows these styles and tone:
 * Always answer in the **same language as the user's question**, regardless of the language of the source documents.
 * If the source documents are in Marathi and the question is in English, **translate and summarize the information into English**.
-* If the question is in Marathi, answer in Marathi.
+* If the question is in Marathi, answer in Marathi. Do the same for English and Hindi.
 * Use direct, everyday language.
 * Maintain a personal and friendly tone, aligned with the user's language.
 * Provide detailed responses, with **toll free numbers** and website links wherever applicable. Use section headers like "Description", "Eligibility", or for Marathi: "उद्देशः", "अंतर्भूत घटकः".
 * If no relevant information is found, reply with: "For more details contact on 104/102 helpline numbers."
 * **Remove duplicate information and provide only one consolidated answer.**
-
+* If There Is No Relevant Context for the Question, Simply Direct User to Contact 104/102 Helpline numbers for it. DO NOT ANSWER IRRELEVANT QUESTIONS,ONLY APOLOGISE THAT YOU CANT ANSWER THIS QUESTION AND DIRECT TOWARDS 104/102 HELPLINE
 Your goal is to help a citizen understand schemes and their eligibility criteria clearly.
 
 Here is the content you will work with: {context}
@@ -150,7 +143,18 @@ Answer:"""
             template=template,
             input_variables=["context", "question"]
         )
-        chain_kwargs = {"prompt": custom_prompt}
+        chain_kwargs = {
+            "prompt": custom_prompt,
+            "verbose": True,  # For debugging
+        }
+        
+        llm = ChatGroq(
+            api_key=groq_api_key, 
+            model=model_choice,
+            temperature=0.05,  # Keep it deterministic
+            max_tokens=max_tokens,
+            callbacks=[StrictContextCallback()]  # Add a custom callback to monitor responses
+        )
         
         return RetrievalQA.from_chain_type(
             llm=llm,
@@ -347,3 +351,23 @@ def get_model_options():
             "description": "Better quality for complex queries, higher latency."
         }
     }
+
+class StrictContextCallback(BaseCallbackHandler):
+    """Callback to monitor and log RAG responses"""
+    
+    def on_chain_end(self, outputs, **kwargs):
+        """Check if response might contain external knowledge"""
+        response = outputs.get("result", "")
+        suspicious_phrases = [
+            "I believe",
+            "generally",
+            "typically",
+            "in most cases",
+            "commonly",
+            "as per my knowledge",
+            "based on my understanding"
+        ]
+        
+        for phrase in suspicious_phrases:
+            if phrase.lower() in response.lower():
+                print(f"Warning: Response may contain external knowledge. Suspicious phrase: {phrase}")
