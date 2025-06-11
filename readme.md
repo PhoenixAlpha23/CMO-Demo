@@ -1,4 +1,4 @@
-This is the Demo application for our CMRF AI project. You can view the application [here](https://cmrf-rag-agent.streamlit.app/).
+This is the Demo application for our CMRF AI project. You can view the application [here](https://raghu-cmrf.streamlit.app/).
 The knowledge base is used to provide information about various government schemes.
 
 ```
