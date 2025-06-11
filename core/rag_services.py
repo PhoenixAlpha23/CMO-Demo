@@ -60,7 +60,7 @@ def detect_language(text):
     return lang, SUPPORTED_LANGUAGES.get(lang, "Unsupported")
 
 # --- RAG Chain Building ---
-def build_rag_chain_from_files(pdf_file, txt_file, groq_api_key, enhanced_mode=True, model_choice="llama-3.1-8b-instant"):
+def build_rag_chain_from_files(pdf_file, txt_file, groq_api_key, enhanced_mode=True, model_choice="llama-3.3-70b-versatile"):
     """
     Build a RAG chain from PDF and/or TXT files.
     This function is kept for potential direct use or as a base.
