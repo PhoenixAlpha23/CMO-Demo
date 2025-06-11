@@ -1,7 +1,6 @@
 This is the Demo application for our CMRF AI project. You can view the application [here](https://raghu-cmrf.streamlit.app/).
 The knowledge base is used to provide information about various government schemes, in english and marathi.
 
-
 ```
 web/
 ├── app.py                   # Main Streamlit application (renamed from rag_app2.py)
@@ -10,7 +9,7 @@ web/
 │   ├── rag_services.py      # RAG chain building, query processing, scheme extraction
 │   ├── tts_services.py      # TTS generation, language detection, audio utilities
 │   ├── cache_manager.py     # Manages query and audio caches
-│   └── transcription.py     # Audio transcription logic
+│   └── transcription.py     # Audio transcription logic with restrction for 3 languages only
 ├── ui/
 │   ├── __init __.py
 │   ├── sidebar.py           # Functions to build the sidebar
