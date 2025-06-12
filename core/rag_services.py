@@ -1,4 +1,3 @@
-
 import tempfile
 import os
 import time
@@ -129,7 +128,7 @@ Ensure your response follows these styles and tone:
 * Use section headers like "Description", "Eligibility", or for Marathi: "उद्देशः", "अंतर्भूत घटकः".
 * If there is no relevant context for the question, simply say:  
   - **In Marathi**: "क्षमस्व, मी या विषयावर तुमची मदत करू शकत नाही. अधिक माहितीसाठी, कृपया १०४/१०२ हेल्पलाइन क्रमांकावर संपर्क साधा."  
-  - **In Hindi**: "माफ़ कीजिए, मैं इस विषय पर आपकी मदद नहीं कर सकता। अधिक जानकारी के लिए कृपया 104/102 हेल्पलाइन नंबर पर संपर्क करें।"  
+  - **In Hindi**: "माफ़ कीजिए, मैं इस विषय पर आपकी मदत नहीं कर सकता। अधिक जानकारी के लिए कृपया 104/102 हेल्पलाइन नंबर पर संपर्क करें।"  
   - **In English**: "I'm sorry, I cannot assist with that topic. For more details, please contact the 104/102 helpline numbers."
 * **Remove duplicate information and provide only one consolidated answer.**
 * Do not provide answers based on assumptions or general knowledge. Use only the information provided in the knowledge base.
