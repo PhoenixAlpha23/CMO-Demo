@@ -115,7 +115,7 @@ def build_rag_chain_from_files(pdf_file, txt_file, groq_api_key, enhanced_mode=T
             
         retriever = TFIDFRetriever.from_documents(splits, k=min(max_chunks, len(splits)))
 
-      template = """You are an efficient Knowledge Assistant named Raghu, designed for answering questions specifically from the knowledge base provided to you.
+    template = """You are an efficient Knowledge Assistant named Raghu, designed for answering questions specifically from the knowledge base provided to you.
 
 Your task is as follows: give a detailed response for the user query in the user language (e.g., "what are some schemes?" --> "Here is a list of some schemes").
 
