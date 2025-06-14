@@ -354,6 +354,10 @@ def get_model_options():
         "llama-3.3-70b-versatile": {
             "name": "Llama 3.3 70B (High Quality)", 
             "description": "Better quality for complex queries, higher latency."
+        },
+        "gemma2-9b-it": {
+            "name": "Gemma Model", 
+            "description": "If llama models are dysfunctional, this is a fallback option."
         }
     }
 
