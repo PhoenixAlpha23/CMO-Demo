@@ -87,7 +87,7 @@ def text_to_speech(text, lang=None, auto_detect=True, speed=1.0, audio_cache=Non
 
 def generate_audio_response(text, lang_preference=None, speed=1.0, audio_cache=None, get_audio_hash_func=None, cache_audio_func=None, get_cached_audio_func=None):
     """
-    Generate audio response for given text - updated to match rag_app.py expectations
+    Generate audio response for given text - updated to match rag_services.py expectations
     Returns: (audio_data, detected_lang, cache_hit) tuple
     """
     if not TTS_AVAILABLE:

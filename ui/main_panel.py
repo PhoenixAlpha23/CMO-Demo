@@ -71,7 +71,7 @@ def inject_chat_styles():
     """, unsafe_allow_html=True)
 
 def render_file_uploaders(st_obj):
-    """Renders file uploaders for PDF and TXT files - UNCHANGED"""
+    """Renders file uploaders for PDF and TXT files"""
     st_obj.markdown("<h4 style='text-align: center;'>📄 कृपया योजनेचे तपशील फाइल अपलोड करा</h4>", unsafe_allow_html=True)
     uploaded_pdf = st_obj.file_uploader("स्किम तपशील पीडीएफ अपलोड करा", type=["pdf"])
     uploaded_txt = st_obj.file_uploader("आरोग्य योजना बुकलेट अपलोड करा", type=["txt"])
