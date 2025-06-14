@@ -227,7 +227,7 @@ def render_chat_history(
                 model_used = entry.get('model', 'Unknown')
                 timestamp = entry.get('timestamp', 'Unknown time')
                 st_obj.caption(f"#{len(st_obj.session_state.chat_history) - i} | Model: {model_used} | Time: {timestamp}")
-                st_obj.markdown(f"<div style='background-color:#E3F2FD; padding:10px; border-radius:8px; margin-bottom:5px; border-left: 4px solid #2196F3;'><strong>🧑 Citizen:</strong><br>{entry['user']}</div>", unsafe_allow_html=True)
+                st_obj.markdown(f"<div style='background-color:#E3F2FD; padding:10px; border-radius:8px; margin-bottom:5px; border-left: 4px solid #2196F3;'><strong>🤓 Citizen:</strong><br>{entry['user']}</div>", unsafe_allow_html=True)
                 st_obj.markdown(f"<div style='background-color:#E8F5E9; padding:10px; border-radius:8px; margin-bottom:15px; border-left: 4px solid #4CAF50;'><strong>🤖 Assistant:</strong><br>{entry['assistant']}</div>", unsafe_allow_html=True)
 
                 if tts_available_flag:
