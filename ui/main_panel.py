@@ -72,11 +72,23 @@ def inject_chat_styles():
     """, unsafe_allow_html=True)
 
 def render_file_uploaders(st_obj):
-    """Renders file uploaders for PDF and TXT files"""
-    st_obj.markdown("<h4 style='text-align: center;'>📄 कृपया योजनेचे तपशील फाइल अपलोड करा</h4>", unsafe_allow_html=True)
-    uploaded_pdf = st_obj.file_uploader("स्किम तपशील पीडीएफ अपलोड करा", type=["pdf"])
-    uploaded_txt = st_obj.file_uploader("आरोग्य योजना बुकलेट अपलोड करा", type=["txt"])
-    return uploaded_pdf, uploaded_txt  
+    """Renders a single file uploader for PDF and TXT files, hides after upload."""
+    if not st_obj.session_state.get("files_uploaded", False):
+        st_obj.markdown("<h4 style='text-align: center;'>📄 कृपया योजनेचे तपशील फाइल्स (PDF/TXT) अपलोड करा</h4>", unsafe_allow_html=True)
+        uploaded_files = st_obj.file_uploader(
+            "स्किम तपशील फाइल्स अपलोड करा (PDF/TXT)",
+            type=["pdf", "txt"],
+            accept_multiple_files=True
+        )
+        if uploaded_files and len(uploaded_files) > 0:
+            st_obj.session_state["files_uploaded"] = True
+            st_obj.session_state["uploaded_files"] = uploaded_files
+            st_obj.rerun()
+        return uploaded_files
+    else:
+        # Optionally, show a message or nothing
+        st_obj.success("✅ फाइल्स अपलोड झाल्या आहेत.")
+        return st_obj.session_state.get("uploaded_files", [])
 
 def render_query_input(st_obj, whisper_client, transcribe_audio_func):
     """Renders text input at bottom when chat exists, otherwise at top"""
