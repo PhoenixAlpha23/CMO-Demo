@@ -19,7 +19,6 @@ from core.cache_manager import (
 from core.transcription import transcribe_audio
 
 # UI module imports
-from ui.sidebar import render_sidebar
 from ui.main_panel import render_file_uploaders, render_query_input, render_answer_section, render_chat_history, render_footer
 from ui.components import create_audio_player_html
 
@@ -49,14 +48,11 @@ def main():
         st.warning("कृपया पुढे जानेसाठी किमान एक फाइल (PDF किंवा TXT) अपलोड करा.")
         st.stop()
 
-    # Sidebar Settings
-    model_options = get_model_options()
-    selected_model, enhanced_mode, voice_lang_pref = render_sidebar(
-        st, 
-        model_options, 
-        lambda: safe_get_cache_stats(get_audio_cache_stats), # Pass a callable for safe_get_cache_stats
-        clear_audio_cache
-    )
+#hardcode Sidebar values
+    selected_model = "llama-3.3-70b-versatile"  # Use the model key for Llama 3.3 Versatile
+    enhanced_mode = True
+    voice_lang_pref = "auto"
+    st.session_state.auto_play_tts = True
 
     # Load Whisper Client
     whisper_client = Groq(api_key=GROQ_API_KEY)
