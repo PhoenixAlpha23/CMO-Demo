@@ -1,7 +1,8 @@
 import streamlit as st
-import pandas as pd # Required for chat history download
-import io # Required for chat history download
-import time # Required for chat history download/timestamp
+import pandas as pd # DataFrame operations
+import io # chat history download
+import time #chat timestamp
+from audiorecorder import audiorecorder  
 
 def inject_chat_styles():
     """Injects CSS styles for the modern chat layout while maintaining original functionality."""
@@ -101,43 +102,41 @@ def render_query_input(st_obj, whisper_client, transcribe_audio_func):
                 st_obj.session_state.suggested_query = ""
         
         with col2:
-            audio_value = st.audio_input("🎤 Record your query", key="audio_input")
-
-    # CSS to make input stick to bottom when chat exists
-    if st_obj.session_state.get('chat_history', []):
-        st_obj.markdown("""
-        <style>
-        [data-testid="stVerticalBlock"]:has(> div:last-child > .stContainer) {
-            position: fixed;
-            bottom: 50px;
-            width: calc(100% - 2rem);
-            background: white;
-            padding: 1rem;
-            z-index: 100;
-            border-top: 1px solid #eee;
-        }
-        </style>
-        """, unsafe_allow_html=True)
+            audio = audiorecorder("🎤 ",
+                                  "⏹️ Stop ",
+                                      custom_style={
+                                          "background-color": "#fff",
+                                          "border": "1px solid #d3d3d3",
+                                          "border-radius": "6px",
+                                          "padding": "8px 16px",
+                                          "font-size": "18px",
+                                          "box-shadow": "0 1px 2px rgba(0,0,0,0.03)",
+                                          "color": "#222",
+                                          "margin-top": "6px"
+                                      }
+                                      )
 
     user_text = None
-    if audio_value is not None:
+    if audio is not None and len(audio) > 0:
         try:
             with st_obj.spinner("🎧 Transcribing audio..."):
-                succes, transcription = user_text = transcribe_audio_func(whisper_client, audio_value.getvalue())
+                # Export to bytes for Whisper
+                audio_bytes = audio.export(format="wav").read()
+                succes, transcription = user_text = transcribe_audio_func(whisper_client, audio_bytes)
                 if not succes:
                     st_obj.error(transcription)
-                    user_text=""
+                    user_text = ""
                 else:
                     st_obj.success(f"🎧 Transcribed: {transcription}")
-                    user_text= transcription
+                    user_text = transcription
         except Exception as e:
             st_obj.error(f"Transcription Error: {str(e)}")
-    
+
     if user_input:
         st_obj.session_state.last_user_input = user_input
     elif user_text:
         st_obj.session_state.last_user_input = user_text
-        
+
     return user_input, user_text  # Same return as before
 def render_answer_section(
     st_obj, 
