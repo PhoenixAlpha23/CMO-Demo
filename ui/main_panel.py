@@ -92,10 +92,6 @@ def render_file_uploaders(st_obj):
 
 def render_query_input(st_obj, whisper_client, transcribe_audio_func):
     """Renders text input at bottom when chat exists, otherwise at top"""
-    # Only show input at top if no chat history exists
-    if not st_obj.session_state.get('chat_history', []):
-        st_obj.markdown("### Ask a question by typing or using audio input")
-    
     # This container will hold our input and float to bottom
     input_container = st_obj.container()
     
@@ -149,7 +145,7 @@ def render_query_input(st_obj, whisper_client, transcribe_audio_func):
     elif user_text:
         st_obj.session_state.last_user_input = user_text
 
-    return user_input, user_text  # Same return as before
+    return user_input, user_text  
 def render_answer_section(
     st_obj, 
     assistant_reply, 
