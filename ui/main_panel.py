@@ -1,8 +1,7 @@
 import streamlit as st
-import pandas as pd # DataFrame operations
-import io # chat history download
-import time #chat timestamp
-from audiorecorder import audiorecorder  
+import pandas as pd # Required for chat history download
+import io # Required for chat history download
+import time # Required for chat history download/timestamp
 
 def inject_chat_styles():
     """Injects CSS styles for the modern chat layout while maintaining original functionality."""
@@ -72,26 +71,18 @@ def inject_chat_styles():
     """, unsafe_allow_html=True)
 
 def render_file_uploaders(st_obj):
-    """Renders a single file uploader for PDF and TXT files, hides after upload."""
-    if not st_obj.session_state.get("files_uploaded", False):
-        st_obj.markdown("<h4 style='text-align: center;'>📄 कृपया योजनेचे तपशील फाइल्स (PDF/TXT) अपलोड करा</h4>", unsafe_allow_html=True)
-        uploaded_files = st_obj.file_uploader(
-            "स्किम तपशील फाइल्स अपलोड करा (PDF/TXT)",
-            type=["pdf", "txt"],
-            accept_multiple_files=True
-        )
-        if uploaded_files and len(uploaded_files) > 0:
-            st_obj.session_state["files_uploaded"] = True
-            st_obj.session_state["uploaded_files"] = uploaded_files
-            st_obj.rerun()
-        return uploaded_files
-    else:
-        # Optionally, show a message or nothing
-        st_obj.success("✅ फाइल्स अपलोड झाल्या आहेत.")
-        return st_obj.session_state.get("uploaded_files", [])
+    """Renders file uploaders for PDF and TXT files"""
+    st_obj.markdown("<h4 style='text-align: center;'>📄 कृपया योजनेचे तपशील फाइल अपलोड करा</h4>", unsafe_allow_html=True)
+    uploaded_pdf = st_obj.file_uploader("स्किम तपशील पीडीएफ अपलोड करा", type=["pdf"])
+    uploaded_txt = st_obj.file_uploader("आरोग्य योजना बुकलेट अपलोड करा", type=["txt"])
+    return uploaded_pdf, uploaded_txt  
 
 def render_query_input(st_obj, whisper_client, transcribe_audio_func):
     """Renders text input at bottom when chat exists, otherwise at top"""
+    # Only show input at top if no chat history exists
+    if not st_obj.session_state.get('chat_history', []):
+        st_obj.markdown("### Ask a question by typing or using audio input")
+    
     # This container will hold our input and float to bottom
     input_container = st_obj.container()
     
@@ -110,42 +101,44 @@ def render_query_input(st_obj, whisper_client, transcribe_audio_func):
                 st_obj.session_state.suggested_query = ""
         
         with col2:
-            audio = audiorecorder("🎤 ",
-                                  "⏹️ Stop ",
-                                      custom_style={
-                                          "background-color": "#fff",
-                                          "border": "1px solid #d3d3d3",
-                                          "border-radius": "6px",
-                                          "padding": "8px 16px",
-                                          "font-size": "18px",
-                                          "box-shadow": "0 1px 2px rgba(0,0,0,0.03)",
-                                          "color": "#222",
-                                          "margin-top": "6px"
-                                      }
-                                      )
+            audio_value = st.audio_input("🎤 Record your query", key="audio_input")
+
+    # CSS to make input stick to bottom when chat exists
+    if st_obj.session_state.get('chat_history', []):
+        st_obj.markdown("""
+        <style>
+        [data-testid="stVerticalBlock"]:has(> div:last-child > .stContainer) {
+            position: fixed;
+            bottom: 50px;
+            width: calc(100% - 2rem);
+            background: white;
+            padding: 1rem;
+            z-index: 100;
+            border-top: 1px solid #eee;
+        }
+        </style>
+        """, unsafe_allow_html=True)
 
     user_text = None
-    if audio is not None and len(audio) > 0:
+    if audio_value is not None:
         try:
             with st_obj.spinner("🎧 Transcribing audio..."):
-                # Export to bytes for Whisper
-                audio_bytes = audio.export(format="wav").read()
-                succes, transcription = user_text = transcribe_audio_func(whisper_client, audio_bytes)
+                succes, transcription = user_text = transcribe_audio_func(whisper_client, audio_value.getvalue())
                 if not succes:
                     st_obj.error(transcription)
-                    user_text = ""
+                    user_text=""
                 else:
                     st_obj.success(f"🎧 Transcribed: {transcription}")
-                    user_text = transcription
+                    user_text= transcription
         except Exception as e:
             st_obj.error(f"Transcription Error: {str(e)}")
-
+    
     if user_input:
         st_obj.session_state.last_user_input = user_input
     elif user_text:
         st_obj.session_state.last_user_input = user_text
-
-    return user_input, user_text  
+        
+    return user_input, user_text  # Same return as before
 def render_answer_section(
     st_obj, 
     assistant_reply, 
@@ -238,7 +231,7 @@ def render_chat_history(
                 st_obj.markdown(f"<div style='background-color:#E8F5E9; padding:10px; border-radius:8px; margin-bottom:15px; border-left: 4px solid #4CAF50;'><strong>🤖 Assistant:</strong><br>{entry['assistant']}</div>", unsafe_allow_html=True)
 
                 if tts_available_flag:
-                    if st_obj.button(f"🔊 Replay", key=f"tts_hist_{i}"):
+                    if st_obj.button(f"🔊 Replay #{len(st_obj.session_state.chat_history) - i}", key=f"tts_hist_{i}"):
                         assistant_text = entry['assistant']
                         if isinstance(assistant_text, tuple):
                             assistant_text = assistant_text[0] if assistant_text else ""
