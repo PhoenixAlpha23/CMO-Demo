@@ -231,7 +231,7 @@ def render_chat_history(
                 st_obj.markdown(f"<div style='background-color:#E8F5E9; padding:10px; border-radius:8px; margin-bottom:15px; border-left: 4px solid #4CAF50;'><strong>🤖 Assistant:</strong><br>{entry['assistant']}</div>", unsafe_allow_html=True)
 
                 if tts_available_flag:
-                    if st_obj.button(f"🔊 Play History #{len(st_obj.session_state.chat_history) - i}", key=f"tts_hist_{i}"):
+                    if st_obj.button(f"🔊 Replay #{len(st_obj.session_state.chat_history) - i}", key=f"tts_hist_{i}"):
                         assistant_text = entry['assistant']
                         if isinstance(assistant_text, tuple):
                             assistant_text = assistant_text[0] if assistant_text else ""
