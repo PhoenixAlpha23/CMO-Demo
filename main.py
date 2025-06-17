@@ -42,7 +42,7 @@ def main():
     init_session_state()
 
     # Upload files (now returns a list)
-    uploaded_files = render_file_uploaders(st)
+    uploaded_pdf, uploaded_txt = render_file_uploaders(st)
 
     # Separate PDF and TXT files for downstream logic
     uploaded_pdf = next((f for f in uploaded_files if f.name.lower().endswith(".pdf")), None)
