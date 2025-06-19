@@ -229,4 +229,4 @@ def render_sidebar(
         
         st_obj.sidebar.markdown("</div>", unsafe_allow_html=True)
             
-    return selected_model, enhanced_mode, tts_speed, voice_lang_pref
+    return selected_model, enhanced_mode, voice_lang_pref

@@ -71,53 +71,31 @@ def inject_chat_styles():
     """, unsafe_allow_html=True)
 
 def render_file_uploaders(st_obj):
-    """Renders file uploaders for PDF and TXT files"""
-    st_obj.markdown("<h4 style='text-align: center;'>📄 कृपया योजनेचे तपशील फाइल अपलोड करा</h4>", unsafe_allow_html=True)
-    uploaded_pdf = st_obj.file_uploader("स्किम तपशील पीडीएफ अपलोड करा", type=["pdf"])
-    uploaded_txt = st_obj.file_uploader("आरोग्य योजना बुकलेट अपलोड करा", type=["txt"])
-    return uploaded_pdf, uploaded_txt  
+    """Renders a single file uploader for PDF and TXT, hides after upload."""
+    if not st_obj.session_state.get("uploaded_files"):
+        st_obj.markdown("<h4 style='text-align: center;'>📄 कृपया योजनेचे तपशील फाइल अपलोड करा</h4>", unsafe_allow_html=True)
+        uploaded_files = st_obj.file_uploader(
+            "PDF किंवा TXT फाइल्स अपलोड करा", 
+            type=["pdf", "txt"], 
+            accept_multiple_files=True
+        )
+        if uploaded_files:
+            st_obj.session_state.uploaded_files = uploaded_files
+            st_obj.rerun()
+        return None, None
+    else:
+        # Separate PDF and TXT files for downstream compatibility
+        pdf_file = next((f for f in st_obj.session_state.uploaded_files if f.name.lower().endswith(".pdf")), None)
+        txt_file = next((f for f in st_obj.session_state.uploaded_files if f.name.lower().endswith(".txt")), None)
+        return pdf_file, txt_file
 
 def render_query_input(st_obj, whisper_client, transcribe_audio_func):
-    """Renders text input at bottom when chat exists, otherwise at top"""
-    # Only show input at top if no chat history exists
+    """Renders audio input at the top, followed by a search-style text input with embedded button."""
     if not st_obj.session_state.get('chat_history', []):
         st_obj.markdown("### Ask a question by typing or using audio input")
-    
-    # This container will hold our input and float to bottom
-    input_container = st_obj.container()
-    
-    with input_container:
-        col1, col2 = st_obj.columns([3, 1])
-        
-        with col1:
-            default_value = st_obj.session_state.suggested_query if st_obj.session_state.suggested_query else ""
-            user_input = st_obj.text_input(
-                "Enter your question", 
-                key="text_input", 
-                placeholder="e.g. मुख्य योजना दाखवा / Show main schemes...",
-                label_visibility="collapsed"
-            )
-            if st_obj.session_state.suggested_query:
-                st_obj.session_state.suggested_query = ""
-        
-        with col2:
-            audio_value = st.audio_input("🎤 Record your query", key="audio_input")
 
-    # CSS to make input stick to bottom when chat exists
-    if st_obj.session_state.get('chat_history', []):
-        st_obj.markdown("""
-        <style>
-        [data-testid="stVerticalBlock"]:has(> div:last-child > .stContainer) {
-            position: fixed;
-            bottom: 50px;
-            width: calc(100% - 2rem);
-            background: white;
-            padding: 1rem;
-            z-index: 100;
-            border-top: 1px solid #eee;
-        }
-        </style>
-        """, unsafe_allow_html=True)
+    # Audio input at the top
+    audio_value = st_obj.audio_input("🎤 Record your query", key="audio_input")
 
     user_text = None
     if audio_value is not None:
@@ -126,19 +104,73 @@ def render_query_input(st_obj, whisper_client, transcribe_audio_func):
                 succes, transcription = user_text = transcribe_audio_func(whisper_client, audio_value.getvalue())
                 if not succes:
                     st_obj.error(transcription)
-                    user_text=""
+                    user_text = ""
                 else:
                     st_obj.success(f"🎧 Transcribed: {transcription}")
-                    user_text= transcription
+                    user_text = transcription
         except Exception as e:
             st_obj.error(f"Transcription Error: {str(e)}")
-    
+
+    # Custom search bar with embedded button
+    st_obj.markdown("""
+    <style>
+    .search-bar-container {
+        display: flex;
+        justify-content: center;
+        margin-bottom: 1rem;
+    }
+    .search-bar-input {
+        width: 100%;
+        max-width: 600px;
+        padding: 0.75rem 3rem 0.75rem 1rem;
+        border-radius: 8px;
+        border: none;
+        background: #23232b;
+        color: #fff;
+        font-size: 1rem;
+        outline: none;
+    }
+    .search-bar-btn {
+        position: relative;
+        right: 2.5rem;
+        border: none;
+        background: none;
+        cursor: pointer;
+        font-size: 1.3rem;
+        color: #fff;
+        top: 0.15rem;
+    }
+    .search-bar-form {
+        display: flex;
+        align-items: center;
+        width: 100%;
+        max-width: 600px;
+        margin: 0 auto;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    user_input = None
+    get_answer_clicked = False
+
+    with st_obj.form("search_form", clear_on_submit=False):
+        st_obj.markdown('<div class="search-bar-container"><div class="search-bar-form">', unsafe_allow_html=True)
+        user_input = st_obj.text_input(
+            "Your question",  # <-- non-empty label for accessibility
+            key="text_input",
+            placeholder="Type here...",
+            #label_visibility="collapsed"
+        )
+        submitted = st_obj.form_submit_button("🔍", use_container_width=False)
+        st_obj.markdown('</div></div>', unsafe_allow_html=True)
+        get_answer_clicked = submitted
+
     if user_input:
         st_obj.session_state.last_user_input = user_input
     elif user_text:
         st_obj.session_state.last_user_input = user_text
-        
-    return user_input, user_text  # Same return as before
+
+    return user_input, user_text, get_answer_clicked
 def render_answer_section(
     st_obj, 
     assistant_reply, 
@@ -227,11 +259,11 @@ def render_chat_history(
                 model_used = entry.get('model', 'Unknown')
                 timestamp = entry.get('timestamp', 'Unknown time')
                 st_obj.caption(f"#{len(st_obj.session_state.chat_history) - i} | Model: {model_used} | Time: {timestamp}")
-                st_obj.markdown(f"<div style='background-color:#E3F2FD; padding:10px; border-radius:8px; margin-bottom:5px; border-left: 4px solid #2196F3;'><strong>🧑 Citizen:</strong><br>{entry['user']}</div>", unsafe_allow_html=True)
+                st_obj.markdown(f"<div style='background-color:#E3F2FD; padding:10px; border-radius:8px; margin-bottom:5px; border-left: 4px solid #2196F3;'><strong>🤓 Citizen:</strong><br>{entry['user']}</div>", unsafe_allow_html=True)
                 st_obj.markdown(f"<div style='background-color:#E8F5E9; padding:10px; border-radius:8px; margin-bottom:15px; border-left: 4px solid #4CAF50;'><strong>🤖 Assistant:</strong><br>{entry['assistant']}</div>", unsafe_allow_html=True)
 
                 if tts_available_flag:
-                    if st_obj.button(f"🔊 Play History #{len(st_obj.session_state.chat_history) - i}", key=f"tts_hist_{i}"):
+                    if st_obj.button(f"🔊 Replay #{len(st_obj.session_state.chat_history) - i}", key=f"tts_hist_{i}"):
                         assistant_text = entry['assistant']
                         if isinstance(assistant_text, tuple):
                             assistant_text = assistant_text[0] if assistant_text else ""
