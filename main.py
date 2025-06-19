@@ -45,7 +45,6 @@ def main():
     uploaded_pdf, uploaded_txt = render_file_uploaders(st)
 
     if not (uploaded_pdf or uploaded_txt):
-        st.warning("कृपया पुढे जानेसाठी किमान एक फाइल (PDF किंवा TXT) अपलोड करा.")
         st.stop()
 
     # Sidebar Settings
@@ -77,16 +76,12 @@ def main():
                     enhanced_mode=enhanced_mode
                 )
                 st.session_state.current_model_key = current_model_key
-                st.success("✅ RAG system ready!")
+                st.success("✅ AI Agent ready!")
             except Exception as e:
                 st.error(f"Failed to build RAG system: {e}")
                 st.stop()
 
-    # Input Section
-    user_input, user_text = render_query_input(st, whisper_client, transcribe_audio)
-
-    # Create a partially configured TTS function to pass to UI elements
-    # This keeps UI elements unaware of cache internals.
+    # --- FIX: Always define partial_generate_audio before using it ---
     if TTS_AVAILABLE:
         partial_generate_audio = functools.partial(
             generate_audio_response,
@@ -96,63 +91,67 @@ def main():
             get_cached_audio_func=get_cached_audio
         )
     else:
-        # Provide a dummy function if TTS is not available
-        # It should match the expected return signature (audio_data, lang_used, cache_hit)
         def dummy_tts(*args, **kwargs):
             return None, (kwargs.get('lang_preference') if kwargs.get('lang_preference') != 'auto' else 'en'), False
         partial_generate_audio = dummy_tts
 
+    # Input Section
+    user_input, user_text, get_answer_clicked = render_query_input(st, whisper_client, transcribe_audio)
+    if get_answer_clicked or user_text:
+        # Create a partially configured TTS function to pass to UI elements
+        # This keeps UI elements unaware of cache internals.
+        
 
-    # Query processing with rate limit handling
-    if st.button("🔍 Get Answer", type="primary") or user_text:
-        input_text = user_text if user_text else user_input.strip()
-        if input_text:
-            # Check rate limit
-            wait_time = check_rate_limit_delay()
-            if wait_time > 0:
-                st.warning(f"⏳ Please wait {wait_time:.1f} seconds to avoid rate limits...")
-                time.sleep(wait_time)
-            
-            try:
-                with st.spinner("🔍 Processing query..."):
-                    st.session_state.last_query_time = time.time()
+        # Query processing with rate limit handling
+        if st.button("🔍 Get Answer", type="primary") or user_text:
+            input_text = user_text if user_text else user_input.strip()
+            if input_text:
+                # Check rate limit
+                wait_time = check_rate_limit_delay()
+                if wait_time > 0:
+                    st.warning(f"⏳ Please wait {wait_time:.1f} seconds to avoid rate limits...")
+                    time.sleep(wait_time)
+                
+                try:
+                    with st.spinner("🔍 Processing query..."):
+                        st.session_state.last_query_time = time.time()
+                        
+                        result = process_scheme_query_with_retry(
+                            st.session_state.rag_chain, 
+                            input_text
+                        )
+                        
+                        if isinstance(result, tuple):
+                            assistant_reply = result[0] if result else "No response received"
+                        else:
+                            assistant_reply = result if result else "No response received"
+                        
+                        if not isinstance(assistant_reply, str):
+                            assistant_reply = str(assistant_reply)
                     
-                    result = process_scheme_query_with_retry(
-                        st.session_state.rag_chain, 
-                        input_text
+                    st.session_state.chat_history.insert(0, {
+                        "user": input_text, 
+                        "assistant": assistant_reply,
+                        "model": selected_model,
+                        "timestamp": time.strftime("%H:%M:%S")
+                    })
+                    
+                    render_answer_section(
+                        st, 
+                        assistant_reply, 
+                        partial_generate_audio, # Pass the pre-configured TTS function
+                        create_audio_player_html, 
+                        voice_lang_pref,
+                        LANG_CODE_TO_NAME,
+                        ALLOWED_TTS_LANGS,
+                        TTS_AVAILABLE # Pass TTS availability status
                     )
-                    
-                    if isinstance(result, tuple):
-                        assistant_reply = result[0] if result else "No response received"
-                    else:
-                        assistant_reply = result if result else "No response received"
-                    
-                    if not isinstance(assistant_reply, str):
-                        assistant_reply = str(assistant_reply)
-                
-                st.session_state.chat_history.insert(0, {
-                    "user": input_text, 
-                    "assistant": assistant_reply,
-                    "model": selected_model,
-                    "timestamp": time.strftime("%H:%M:%S")
-                })
-                
-                render_answer_section(
-                    st, 
-                    assistant_reply, 
-                    partial_generate_audio, # Pass the pre-configured TTS function
-                    create_audio_player_html, 
-                    voice_lang_pref,
-                    LANG_CODE_TO_NAME,
-                    ALLOWED_TTS_LANGS,
-                    TTS_AVAILABLE # Pass TTS availability status
-                )
-            except Exception as e:
-                st.error(f"Error: {e}")
-                if "rate_limit" in str(e).lower():
-                    st.info("💡 **Tips to avoid rate limits:**\n- Wait 10-15 seconds between queries\n- Use simpler, more specific questions\n- Try the faster model (8B) for basic queries")
-        else:
-            st.warning("Please enter a question or record audio.")
+                except Exception as e:
+                    st.error(f"Error: {e}")
+                    if "rate_limit" in str(e).lower():
+                        st.info("💡 **Tips to avoid rate limits:**\n- Wait 10-15 seconds between queries\n- Use simpler, more specific questions\n- Try the faster model (8B) for basic queries")
+            else:
+                st.warning("Please enter a question or record audio.")
 
     # Enhanced Chat History
     render_chat_history(
@@ -160,7 +159,7 @@ def main():
         pd, 
         io, 
         time, 
-        partial_generate_audio, # Pass the pre-configured TTS function
+        partial_generate_audio, # Now always defined!
         create_audio_player_html, 
         voice_lang_pref,
         TTS_AVAILABLE, # Pass TTS availability status
