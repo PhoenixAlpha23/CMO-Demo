@@ -306,6 +306,6 @@ def render_footer(st_obj, selected_model):
     col1, col2 = st_obj.columns(2)
     with col1:
         if st_obj.session_state.chat_history:
-            st_obj.markdown(f"📊 **Session:** {len(st_obj.session_state.chat_history)} queries | Model: {selected_model}")
+            st_obj.markdown(f"📊 **Session:** {len(st_obj.session_state.chat_history)} queries ")
     with col2:
-        st_obj.markdown("💡 **Tip:** Use specific questions to avoid rate limits | 🔊 TTS available")
+        st.markdown("<div style='text-align: right; font-weight: bold;'>🔊 STT, 📃 TTS</div>",unsafe_allow_html=True)

@@ -29,11 +29,11 @@ from utils.helpers import init_session_state, check_rate_limit_delay, safe_get_c
 load_env_vars()
 
 def main():
-    st.set_page_config(page_title="RAGhu", layout="wide")
+    st.set_page_config(page_title="RAG Agent", layout="wide")
     col1, col2, col3 = st.columns([2, 2, 1])
     with col2:
         st.image("assets/cmrf logo.jpg", width=250)
-    st.markdown("<h1 style='text-align: center;'>🤖CMRF AI AGENT </h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center;'>🤖 CMRF AI AGENT </h1>", unsafe_allow_html=True)
     
     if not GROQ_API_KEY:
         st.error("Missing GROQ_API_KEY. Please set it in your .env file.")
@@ -77,7 +77,10 @@ def main():
                     enhanced_mode=enhanced_mode
                 )
                 st.session_state.current_model_key = current_model_key
-                st.success("✅ AI Agent ready!")
+                msg = st.empty()
+                msg.success("✅ RAG Agent ready!")
+                time.sleep(5)
+                msg.empty()
             except Exception as e:
                 st.error(f"Failed to build RAG system: {e}")
                 st.stop()
