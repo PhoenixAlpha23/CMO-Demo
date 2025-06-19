@@ -52,7 +52,8 @@ def main():
         st.warning("कृपया पुढे जानेसाठी किमान एक फाइल (PDF किंवा TXT) अपलोड करा.")
         st.stop()
 
-#hardcode Sidebar values
+    # Sidebar Settings
+    #hardcode Sidebar values
     selected_model = "llama-3.3-70b-versatile"  # Use the model key for Llama 3.3 Versatile
     enhanced_mode = True
     voice_lang_pref = "auto"
