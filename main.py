@@ -44,10 +44,6 @@ def main():
     # Upload files (now returns a list)
     uploaded_pdf, uploaded_txt = render_file_uploaders(st)
 
-    # Separate PDF and TXT files for downstream logic
-    uploaded_pdf = next((f for f in uploaded_files if f.name.lower().endswith(".pdf")), None)
-    uploaded_txt = next((f for f in uploaded_files if f.name.lower().endswith(".txt")), None)
-
     if not (uploaded_pdf or uploaded_txt):
         st.warning("कृपया पुढे जानेसाठी किमान एक फाइल (PDF किंवा TXT) अपलोड करा.")
         st.stop()
