@@ -29,10 +29,10 @@ from utils.helpers import init_session_state, check_rate_limit_delay, safe_get_c
 load_env_vars()
 
 def main():
-    st.set_page_config(page_title="RAGhu", layout="wide")
+    st.set_page_config(page_title="RAG Agent", layout="wide")
     col1, col2, col3 = st.columns([2, 2, 1])
     with col2:
-        st.image("assets/cmrf logo.jpg", width=200)
+        st.image("assets/cmrf logo.jpg", width=250)
     st.markdown("<h1 style='text-align: center;'>🤖 CMRF AI AGENT </h1>", unsafe_allow_html=True)
     
     if not GROQ_API_KEY:
@@ -41,7 +41,7 @@ def main():
 
     init_session_state()
 
-    # Upload files
+    # Upload files (now returns a list)
     uploaded_pdf, uploaded_txt = render_file_uploaders(st)
 
     if not (uploaded_pdf or uploaded_txt):
@@ -67,7 +67,7 @@ def main():
     if (st.session_state.rag_chain is None or 
         st.session_state.get('current_model_key', '') != current_model_key):
         
-        with st.spinner("🔧 Building optimized RAG system... Please wait."):
+        with st.spinner("🔧Initializing AI system... Please wait."):
             try:
                 st.session_state.rag_chain = build_rag_chain_with_model_choice(
                     uploaded_pdf, 
@@ -77,34 +77,19 @@ def main():
                     enhanced_mode=enhanced_mode
                 )
                 st.session_state.current_model_key = current_model_key
-                st.success("✅ RAG system ready!")
+                msg = st.empty()
+                msg.success("✅ RAG Agent ready!")
+                time.sleep(5)
+                msg.empty()
             except Exception as e:
                 st.error(f"Failed to build RAG system: {e}")
                 st.stop()
 
     # Input Section
-    user_input, user_text = render_query_input(st, whisper_client, transcribe_audio)
-
-    # Create a partially configured TTS function to pass to UI elements
-    # This keeps UI elements unaware of cache internals.
-    if TTS_AVAILABLE:
-        partial_generate_audio = functools.partial(
-            generate_audio_response,
-            audio_cache=_audio_cache,
-            get_audio_hash_func=get_audio_hash,
-            cache_audio_func=cache_audio,
-            get_cached_audio_func=get_cached_audio
-        )
-    else:
-        # Provide a dummy function if TTS is not available
-        # It should match the expected return signature (audio_data, lang_used, cache_hit)
-        def dummy_tts(*args, **kwargs):
-            return None, (kwargs.get('lang_preference') if kwargs.get('lang_preference') != 'auto' else 'en'), False
-        partial_generate_audio = dummy_tts
-
+    user_input, user_text, get_answer_clicked = render_query_input(st, whisper_client, transcribe_audio)
 
     # Query processing with rate limit handling
-    if st.button("🔍 Get Answer", type="primary") or user_text:
+    if get_answer_clicked or user_text:
         input_text = user_text if user_text else user_input.strip()
         if input_text:
             # Check rate limit
@@ -140,12 +125,12 @@ def main():
                 render_answer_section(
                     st, 
                     assistant_reply, 
-                    partial_generate_audio, # Pass the pre-configured TTS function
+                    generate_audio_response,  # <-- Use directly
                     create_audio_player_html, 
                     voice_lang_pref,
                     LANG_CODE_TO_NAME,
                     ALLOWED_TTS_LANGS,
-                    TTS_AVAILABLE # Pass TTS availability status
+                    TTS_AVAILABLE
                 )
             except Exception as e:
                 st.error(f"Error: {e}")
@@ -160,10 +145,10 @@ def main():
         pd, 
         io, 
         time, 
-        partial_generate_audio, # Pass the pre-configured TTS function
+        generate_audio_response,  # <-- Use directly
         create_audio_player_html, 
         voice_lang_pref,
-        TTS_AVAILABLE, # Pass TTS availability status
+        TTS_AVAILABLE,
         LANG_CODE_TO_NAME,
         ALLOWED_TTS_LANGS
     )

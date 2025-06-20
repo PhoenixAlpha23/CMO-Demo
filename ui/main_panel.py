@@ -71,37 +71,50 @@ def inject_chat_styles():
     """, unsafe_allow_html=True)
 
 def render_file_uploaders(st_obj):
-    """Renders file uploaders for PDF and TXT files"""
-    st_obj.markdown("<h4 style='text-align: center;'>📄 कृपया योजनेचे तपशील फाइल अपलोड करा</h4>", unsafe_allow_html=True)
-    uploaded_pdf = st_obj.file_uploader("स्किम तपशील पीडीएफ अपलोड करा", type=["pdf"])
-    uploaded_txt = st_obj.file_uploader("आरोग्य योजना बुकलेट अपलोड करा", type=["txt"])
-    return uploaded_pdf, uploaded_txt  
+    """Renders a single file uploader for PDF and TXT, hides after upload."""
+    if not st_obj.session_state.get("uploaded_files"):
+        st_obj.markdown("<h4 style='text-align: center;'>📄 कृपया योजनेचे तपशील फाइल अपलोड करा</h4>", unsafe_allow_html=True)
+        uploaded_files = st_obj.file_uploader(
+            "PDF किंवा TXT फाइल्स अपलोड करा", 
+            type=["pdf", "txt"], 
+            accept_multiple_files=True
+        )
+        if uploaded_files:
+            st_obj.session_state.uploaded_files = uploaded_files
+            st_obj.rerun()
+        return None, None
+    else:
+        # Separate PDF and TXT files for downstream compatibility
+        pdf_file = next((f for f in st_obj.session_state.uploaded_files if f.name.lower().endswith(".pdf")), None)
+        txt_file = next((f for f in st_obj.session_state.uploaded_files if f.name.lower().endswith(".txt")), None)
+        return pdf_file, txt_file
 
 def render_query_input(st_obj, whisper_client, transcribe_audio_func):
-    """Renders text input at bottom when chat exists, otherwise at top"""
-    # Only show input at top if no chat history exists
+    """Renders audio input above text input, and centers the Get Answer button below."""
     if not st_obj.session_state.get('chat_history', []):
         st_obj.markdown("### Ask a question by typing or using audio input")
-    
-    # This container will hold our input and float to bottom
+
     input_container = st_obj.container()
-    
+
     with input_container:
-        col1, col2 = st_obj.columns([3, 1])
-        
-        with col1:
-            default_value = st_obj.session_state.suggested_query if st_obj.session_state.suggested_query else ""
-            user_input = st_obj.text_input(
-                "Enter your question", 
-                key="text_input", 
-                placeholder="e.g. मुख्य योजना दाखवा / Show main schemes...",
-                label_visibility="collapsed"
-            )
-            if st_obj.session_state.suggested_query:
-                st_obj.session_state.suggested_query = ""
-        
-        with col2:
-            audio_value = st.audio_input("🎤 Record your query", key="audio_input")
+        # Audio input on top
+        audio_value = st_obj.audio_input("🎤 Record your query", key="audio_input")
+
+        # Text input below audio
+        default_value = st_obj.session_state.suggested_query if st_obj.session_state.suggested_query else ""
+        user_input = st_obj.text_input(
+            "Enter your question",
+            key="text_input",
+            placeholder="e.g. मुख्य योजना दाखवा / Show main schemes...",
+            label_visibility="collapsed"
+        )
+        if st_obj.session_state.suggested_query:
+            st_obj.session_state.suggested_query = ""
+
+        # Centered Get Answer button
+        col_left, col_center, col_right = st_obj.columns([1, 2, 1])
+        with col_center:
+            get_answer_clicked = st_obj.button("🔍 Get Answer", type="primary", use_container_width=True)
 
     # CSS to make input stick to bottom when chat exists
     if st_obj.session_state.get('chat_history', []):
@@ -126,19 +139,20 @@ def render_query_input(st_obj, whisper_client, transcribe_audio_func):
                 succes, transcription = user_text = transcribe_audio_func(whisper_client, audio_value.getvalue())
                 if not succes:
                     st_obj.error(transcription)
-                    user_text=""
+                    user_text = ""
                 else:
                     st_obj.success(f"🎧 Transcribed: {transcription}")
-                    user_text= transcription
+                    user_text = transcription
         except Exception as e:
             st_obj.error(f"Transcription Error: {str(e)}")
-    
+
     if user_input:
         st_obj.session_state.last_user_input = user_input
     elif user_text:
         st_obj.session_state.last_user_input = user_text
-        
-    return user_input, user_text  # Same return as before
+
+    # Return the button state so main.py can use it
+    return user_input, user_text, get_answer_clicked
 def render_answer_section(
     st_obj, 
     assistant_reply, 
@@ -292,6 +306,6 @@ def render_footer(st_obj, selected_model):
     col1, col2 = st_obj.columns(2)
     with col1:
         if st_obj.session_state.chat_history:
-            st_obj.markdown(f"📊 **Session:** {len(st_obj.session_state.chat_history)} queries | Model: {selected_model}")
+            st_obj.markdown(f"📊 **Session:** {len(st_obj.session_state.chat_history)} queries ")
     with col2:
-        st_obj.markdown("💡 **Tip:** Use specific questions to avoid rate limits | 🔊 TTS available")
+        st.markdown("<div style='text-align: right; font-weight: bold;'>🔊 STT, 📃 TTS</div>",unsafe_allow_html=True)
