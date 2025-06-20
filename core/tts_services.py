@@ -2,6 +2,14 @@ import re
 from io import BytesIO
 import time
 
+# Import cache functions/objects directly
+from core.cache_manager import (
+    _audio_cache,
+    get_audio_hash,
+    cache_audio,
+    get_cached_audio
+)
+
 # New imports for TTS and language detection
 try:
     from gtts import gTTS
@@ -43,9 +51,9 @@ def detect_language(text):
         print(f"Language detection failed: {e}")
         return 'en'  # Fallback to English
 
-def text_to_speech(text, lang=None, auto_detect=True, speed=1.0, audio_cache=None, get_audio_hash_func=None, cache_audio_func=None, get_cached_audio_func=None):
+def text_to_speech(text, lang=None, auto_detect=True, speed=1.0):
     """
-    Convert text to speech with caching and speed control
+    Convert text to speech with caching and speed control.
     Returns: (audio_bytes, language_used, cache_status)
     """
     if not TTS_AVAILABLE:
@@ -56,14 +64,13 @@ def text_to_speech(text, lang=None, auto_detect=True, speed=1.0, audio_cache=Non
         if auto_detect or not lang:
             detected_lang = detect_language(text)
             lang = detected_lang
-        
-        # Check cache first (including speed in hash)
-        if audio_cache is not None and get_audio_hash_func and cache_audio_func and get_cached_audio_func:
-            audio_hash = get_audio_hash_func(text, lang, speed)
-            cached_audio = get_cached_audio_func(audio_hash)
-            if cached_audio:
-                return cached_audio, lang, 'cached'
-        
+
+        # Use cache directly
+        audio_hash = get_audio_hash(text, lang, speed)
+        cached_audio = get_cached_audio(audio_hash)
+        if cached_audio:
+            return cached_audio, lang, 'cached'
+
         # Generate TTS with speed control
         # Note: gTTS doesn't directly support speed, but we can simulate it
         slow_speech = speed < 0.8 # gTTS only has slow=True/False. True is ~0.7x
@@ -74,20 +81,17 @@ def text_to_speech(text, lang=None, auto_detect=True, speed=1.0, audio_cache=Non
         tts.write_to_fp(audio_buffer)
         audio_buffer.seek(0)
         audio_bytes = audio_buffer.getvalue()
-        
-        # Cache the audio
-        if audio_cache is not None and get_audio_hash_func and cache_audio_func:
-            cache_audio_func(audio_hash, audio_bytes)
-        
+
+        cache_audio(audio_hash, audio_bytes)
         return audio_bytes, lang, 'generated'
         
     except Exception as e:
         print(f"TTS Error: {e}")
         return None, lang or 'en', f'error: {str(e)}'
 
-def generate_audio_response(text, lang_preference=None, speed=1.0, audio_cache=None, get_audio_hash_func=None, cache_audio_func=None, get_cached_audio_func=None):
+def generate_audio_response(text, lang_preference=None, speed=1.0):
     """
-    Generate audio response for given text - updated to match rag_services.py expectations
+    Generate audio response for given text.
     Returns: (audio_data, detected_lang, cache_hit) tuple
     """
     if not TTS_AVAILABLE:
@@ -108,11 +112,7 @@ def generate_audio_response(text, lang_preference=None, speed=1.0, audio_cache=N
             clean_text,
             lang=target_lang, # Pass specific lang if chosen, else None for auto-detect
             auto_detect=(not target_lang), # Auto-detect only if no specific lang is preferred
-            speed=speed,
-            audio_cache=audio_cache,
-            get_audio_hash_func=get_audio_hash_func,
-            cache_audio_func=cache_audio_func,
-            get_cached_audio_func=get_cached_audio_func
+            speed=speed
         )
 
         cache_hit = cache_status == 'cached'
