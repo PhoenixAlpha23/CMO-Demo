@@ -20,7 +20,9 @@ web/
 │   ├── config.py            # Configuration loading (e.g., API keys)
 │   └── helpers.py           # General helper functions, constants
 ├── .env                     # Environment variables
-└── requirements.txt         # Python dependencies
+├── requirements.txt
+├── main.py                  # streamlit application
+└──fastapp.py                # fastapi set up
 ```
 
 ## Features
@@ -50,8 +52,3 @@ web/
 
 ### Download Chat History
 *   Enables users to download their chat history in Excel format.
-
-### Next Steps
-
-*   Add CRM autofill to our POC
-*   Train transformer model(RoBERT or BERT for error correction in audio transcriptions, especially Marathi and Hindi.)
