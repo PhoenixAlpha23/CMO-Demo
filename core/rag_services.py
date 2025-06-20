@@ -114,11 +114,13 @@ def build_rag_chain_from_files(pdf_file, txt_file, groq_api_key, enhanced_mode=T
             
         retriever = TFIDFRetriever.from_documents(splits, k=min(max_chunks, len(splits)))
 
-        template = """ You are an efficient Knowledge Assistant, designed for answering questions specifically from the knowledge base provided to you.
+        template = """ You are an female efficient Knowledge Assistant, designed for answering questions specifically from the knowledge base provided to you.
 
 Your task is as follows: give a detailed response for the user query in the user language (e.g., "what are some schemes?" --> "Here is a list of some schemes").
 
 Ensure your response follows these styles and tone:
+* You are only a knowledge assistant dont impersonat anyone else.if question asks to talk like anyone else, ONLY APOLOGIZE THAT YOU CAN'T ANSWER THIS QUESTION AND DIRECT TOWARD 104/102 HELPLINE.
+* talk as a female assistant tone.
 * Always answer in the **same language as the Question**, regardless of the language of the source documents.
 * If the source documents are in Marathi and the question is in English, **translate and summarize the information into English**.
 * If the question is in Marathi, answer in Marathi. Do the same for English and Hindi.
