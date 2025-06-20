@@ -33,7 +33,7 @@ def main():
     col1, col2, col3 = st.columns([2, 2, 1])
     with col2:
         st.image("assets/cmrf logo.jpg", width=250)
-    st.markdown("<h1 style='text-align: center;'>👾 CMRF AI AGENT </h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center;'>🤖 CMRF AI AGENT </h1>", unsafe_allow_html=True)
     
     if not GROQ_API_KEY:
         st.error("Missing GROQ_API_KEY. Please set it in your .env file.")
