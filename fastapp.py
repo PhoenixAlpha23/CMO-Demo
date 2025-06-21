@@ -125,3 +125,19 @@ async def get_audio(text: str = Form(...), lang_preference: str = Form("auto")):
 @app.get("/health/")
 async def health_check():
     return {"status": "ok"}
+
+@app.post("/transcribe/")
+async def transcribe_audio_endpoint(audio_file: UploadFile = File(...)):
+    if not GROQ_API_KEY:
+        return JSONResponse(status_code=500, content={"error": "Missing GROQ_API_KEY."})
+
+    try:
+        audio_bytes = await audio_file.read()
+        whisper_client = Groq(api_key=GROQ_API_KEY)
+        success, result = transcribe_audio(whisper_client, audio_bytes)
+        if success:
+            return {"transcription": result}
+        else:
+            return JSONResponse(status_code=400, content={"error": result})
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": f"Transcription failed: {str(e)}"})
