@@ -5,13 +5,14 @@ from typing import Optional, List
 import time
 import functools
 import io
+import base64
 
 from groq import Groq
 
 # Core services
 from core.rag_services import build_rag_chain_with_model_choice, process_scheme_query_with_retry
 from core.tts_services import generate_audio_response, TTS_AVAILABLE
-from core.cache_manager import _audio_cache, get_audio_hash, cache_audio, get_cached_audio
+#from core.cache_manager import _audio_cache
 from core.transcription import transcribe_audio
 from utils.config import load_env_vars, GROQ_API_KEY
 from utils.helpers import check_rate_limit_delay, LANG_CODE_TO_NAME, ALLOWED_TTS_LANGS
@@ -49,9 +50,18 @@ async def upload_files(pdf_file: Optional[UploadFile] = File(None), txt_file: Op
     # Build RAG chain if needed
     if STATE["rag_chain"] is None or STATE["current_model_key"] != current_model_key:
         try:
+            if pdf_file:
+                pdf_bytes = await pdf_file.read()
+            else:
+                pdf_bytes = None
+            if txt_file:
+                txt_bytes = await txt_file.read()
+            else:
+                txt_bytes = None
+
             rag_chain = build_rag_chain_with_model_choice(
-                pdf_file.file if pdf_file else None,
-                txt_file.file if txt_file else None,
+                io.BytesIO(pdf_bytes) if pdf_bytes else None,
+                io.BytesIO(txt_bytes) if txt_bytes else None,
                 GROQ_API_KEY,
                 model_choice="llama-3.3-70b-versatile",
                 enhanced_mode=True
@@ -102,16 +112,12 @@ async def get_audio(text: str = Form(...), lang_preference: str = Form("auto")):
     try:
         audio_data, lang_used, cache_hit = generate_audio_response(
             text=text,
-            lang_preference=lang_preference,
-            audio_cache=_audio_cache,
-            get_audio_hash_func=get_audio_hash,
-            cache_audio_func=cache_audio,
-            get_cached_audio_func=get_cached_audio
+            lang_preference=lang_preference
         )
         return JSONResponse(content={
             "lang_used": lang_used,
             "cache_hit": cache_hit,
-            "audio_base64": audio_data.decode('utf-8') if audio_data else None
+            "audio_base64": base64.b64encode(audio_data).decode('utf-8') if audio_data else None
         })
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": f"TTS generation failed: {str(e)}"})
