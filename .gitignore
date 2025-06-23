@@ -1,3 +1,6 @@
 __pycache__
 .env
-fastapp.py
+fastAPI/ui/__init__.py
+fastAPI/ui/components.py
+fastAPI/main.py
+fastAPI/ui/sidebar.py
