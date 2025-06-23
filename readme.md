@@ -22,7 +22,7 @@ web/
 ├── .env                     # Environment variables
 └── requirements.txt         # Python dependencies
 ```
-
+Note: to use the fastAPI backend, run uvicorn fastapp:app --reload --host 0.0.0.0 --port 8000
 ## Features
 
 ### Speech-to-Text Functionality
