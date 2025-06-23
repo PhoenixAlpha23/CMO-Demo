@@ -157,25 +157,6 @@ def main():
     # Footer with tips
     render_footer(st, selected_model)
 
-    # API Interaction Section
-    st.title("CMRF AI Agent Frontend")
-
-    user_input = st.text_input("Ask a question:")
-    if st.button("Submit"):
-        payload = {
-            "input_text": user_input,
-            "model": "llama-3.3-70b-versatile",
-            "enhanced_mode": True,
-            "voice_lang_pref": "auto"
-        }
-        response = requests.post(
-            "http://localhost:8000/query/",
-            json=payload
-        )
-        if response.ok:
-            st.write(response.json().get("reply", "No reply received."))
-        else:
-            st.error(response.json().get("error", "Error occurred."))
 
 if __name__ == "__main__":
     main()
