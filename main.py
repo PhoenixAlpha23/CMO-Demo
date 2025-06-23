@@ -4,7 +4,6 @@ import pandas as pd
 import io
 import time
 import functools # Added for partial function application
-import requests
 
 # Core service imports
 from core.rag_services import build_rag_chain_with_model_choice, process_scheme_query_with_retry, get_model_options
@@ -156,7 +155,6 @@ def main():
 
     # Footer with tips
     render_footer(st, selected_model)
-
 
 if __name__ == "__main__":
     main()

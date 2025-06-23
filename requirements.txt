@@ -1,4 +1,4 @@
-streamlit<=1.45.1
+streamlit
 python-dotenv
 langchain
 langchain-community
@@ -14,7 +14,3 @@ gtts
 pygame 
 langdetect
 langid
-# for fastapi
-fastapi
-uvicorn
-python-multipart

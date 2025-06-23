@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd # Required for chat history download
 import io # Required for chat history download
 import time # Required for chat history download/timestamp
-import requests
+
 def inject_chat_styles():
     """Injects CSS styles for the modern chat layout while maintaining original functionality."""
     st.markdown("""
@@ -115,19 +115,6 @@ def render_query_input(st_obj, whisper_client, transcribe_audio_func):
         col_left, col_center, col_right = st_obj.columns([1, 2, 1])
         with col_center:
             get_answer_clicked = st_obj.button("🔍 Get Answer", type="primary", use_container_width=True)
-            if get_answer_clicked:
-                payload = {"input_text": user_input,
-                            "model": "llama-3.3-70b-versatile",
-                            "enhanced_mode": True,
-                            "voice_lang_pref": "auto"
-                            }
-                response = requests.post(
-                    "http://localhost:8000/query/",
-                    json=payload)
-                if response.ok:
-                    st.write(response.json().get("reply", "No reply received."))
-                else:
-                    st.error(response.json().get("error", "Error occurred."))
 
     # CSS to make input stick to bottom when chat exists
     if st_obj.session_state.get('chat_history', []):
