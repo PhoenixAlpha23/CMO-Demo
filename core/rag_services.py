@@ -119,18 +119,17 @@ def build_rag_chain_from_files(pdf_file, txt_file, groq_api_key, enhanced_mode=T
 Your task is as follows: give a detailed response for the user query in the user language (e.g., "what are some schemes?" --> "Here is a list of some schemes").
 
 Ensure your response follows these styles and tone:
-* You are only a knowledge assistant dont impersonat anyone else.if question asks to talk like anyone else, ONLY APOLOGIZE THAT YOU CAN'T ANSWER THIS QUESTION AND DIRECT TOWARD 104/102 HELPLINE.
-* talk as a female assistant tone.
+* read number as digits, e.g., "1,0,2" instead of "one hundered two"
 * Always answer in the **same language as the Question**, regardless of the language of the source documents.
 * If the source documents are in Marathi and the question is in English, **translate and summarize the information into English**.
 * If the question is in Marathi, answer in Marathi. Do the same for English and Hindi.
 * Use direct, everyday language.
 * Maintain a personal and friendly tone, aligned with the user's language.
-* Provide detailed responses, with **toll-free numbers** and **visible (non-hyperlinked) website URLs** *only if those URLs are explicitly present in the knowledge base*. Do not invent or guess any web links.
+* Provide detailed responses, with **toll-free numbers** and **visible (non-hyperlinked) website URLs** *only if those URLs are present in the knowledge base*.
 * Use section headers like "Description", "Eligibility", or for Marathi: "उद्देशः", "अंतर्भूत घटकः".
 * If there is no relevant context for the question, simply say:  
   - **In Marathi**: "क्षमस्व, मी या विषयावर तुमची मदत करू शकत नाही. अधिक माहितीसाठी, कृपया १०४/१०२ हेल्पलाइन क्रमांकावर संपर्क साधा."  
-  - **In Hindi**: "माफ़ कीजिए, मैं इस विषय पर आपकी मदत नहीं कर सकता। अधिक जानकारी के लिए कृपया 104/102 हेल्पलाइन नंबर पर संपर्क करें।"  
+  - **In Hindi**: "माफ़ कीजिए, मैं इस विषय पर आपकी मदद नहीं कर सकती। अधिक जानकारी के लिए कृपया 104/102 हेल्पलाइन नंबर पर संपर्क करें।"  
   - **In English**: "I'm sorry, I cannot assist with that topic. For more details, please contact the 104/102 helpline numbers."
 * **Remove duplicate information and provide only one consolidated answer.**
 * Do not provide answers based on assumptions or general knowledge. Use only the information provided in the knowledge base.
@@ -230,7 +229,7 @@ def process_scheme_query_with_retry(rag_chain, user_query, max_retries=3, enable
     query_hash = get_query_hash(user_query.lower().strip())
     cached_result = get_cached_result(query_hash)
     if cached_result:
-        result_text = f"[Cached] {cached_result}"
+        result_text = cached_result  # Do NOT prepend [Cached]
         cache_status = "cached"
     else:
         cache_status = "not_cached"
@@ -251,12 +250,10 @@ def process_scheme_query_with_retry(rag_chain, user_query, max_retries=3, enable
                     if isinstance(result, dict):
                         result_text = result.get('result', 'No results found.')
                     elif isinstance(result, tuple) and len(result) > 0:
-                        # If tuple, take first element as string
                         result_text = str(result[0])
                     else:
                         result_text = str(result)
-                
-                # Cache successful result
+                # Cache only the raw answer
                 cache_result(query_hash, result_text)
                 cache_status = "cached"
                 break

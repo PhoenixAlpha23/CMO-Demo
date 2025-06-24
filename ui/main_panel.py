@@ -2,7 +2,8 @@ import streamlit as st
 import pandas as pd # Required for chat history download
 import io # Required for chat history download
 import time # Required for chat history download/timestamp
-
+import requests
+import base64
 def inject_chat_styles():
     """Injects CSS styles for the modern chat layout while maintaining original functionality."""
     st.markdown("""
@@ -81,6 +82,20 @@ def render_file_uploaders(st_obj):
         )
         if uploaded_files:
             st_obj.session_state.uploaded_files = uploaded_files
+
+            for file in uploaded_files:
+                files = {}
+                if file.name.lower().endswith(".pdf"):
+                    files["pdf_file"] = (file.name, file.getvalue(), "application/pdf")
+                elif file.name.lower().endswith(".txt"):
+                    files["txt_file"] = (file.name, file.getvalue(), "text/plain")
+                if files:
+                    response = requests.post("http://localhost:8000/upload/", files=files)
+                    if response.ok:
+                        st_obj.success("File uploaded and processed by backend.")
+                    else:
+                        st_obj.error(f"Upload failed: {response.text}")
+
             st_obj.rerun()
         return None, None
     else:
@@ -90,12 +105,60 @@ def render_file_uploaders(st_obj):
         return pdf_file, txt_file
 
 def render_query_input(st_obj, whisper_client, transcribe_audio_func):
-    """Renders audio input at the top, followed by a search-style text input with embedded button."""
+    """Renders audio input above text input, and centers the Get Answer button below."""
     if not st_obj.session_state.get('chat_history', []):
         st_obj.markdown("### Ask a question by typing or using audio input")
 
-    # Audio input at the top
-    audio_value = st_obj.audio_input("🎤 Record your query", key="audio_input")
+    input_container = st_obj.container()
+
+    with input_container:
+        # Audio input on top
+        audio_value = st_obj.audio_input("🎤 Record your query", key="audio_input")
+
+        # Text input below audio
+        default_value = st_obj.session_state.suggested_query if st_obj.session_state.suggested_query else ""
+        user_input = st_obj.text_input(
+            "Enter your question",
+            key="text_input",
+            placeholder="e.g. मुख्य योजना दाखवा / Show main schemes...",
+            label_visibility="collapsed"
+        )
+        if st_obj.session_state.suggested_query:
+            st_obj.session_state.suggested_query = ""
+
+        # Centered Get Answer button
+        col_left, col_center, col_right = st_obj.columns([1, 2, 1])
+        with col_center:
+            get_answer_clicked = st_obj.button("🔍 Get Answer", type="primary", use_container_width=True)
+            if get_answer_clicked:
+                payload = {"input_text": user_input,
+                            "model": "llama-3.3-70b-versatile",
+                            "enhanced_mode": True,
+                            "voice_lang_pref": "auto"
+                            }
+                response = requests.post(
+                    "http://localhost:8000/query/",
+                    json=payload)
+                if response.ok:
+                    st.write(response.json().get("reply", "No reply received."))
+                else:
+                    st.error(response.json().get("error", "Error occurred."))
+
+    # CSS to make input stick to bottom when chat exists
+    if st_obj.session_state.get('chat_history', []):
+        st_obj.markdown("""
+        <style>
+        [data-testid="stVerticalBlock"]:has(> div:last-child > .stContainer) {
+            position: fixed;
+            bottom: 50px;
+            width: calc(100% - 2rem);
+            background: white;
+            padding: 1rem;
+            z-index: 100;
+            border-top: 1px solid #eee;
+        }
+        </style>
+        """, unsafe_allow_html=True)
 
     user_text = None
     if audio_value is not None:
@@ -111,65 +174,12 @@ def render_query_input(st_obj, whisper_client, transcribe_audio_func):
         except Exception as e:
             st_obj.error(f"Transcription Error: {str(e)}")
 
-    # Custom search bar with embedded button
-    st_obj.markdown("""
-    <style>
-    .search-bar-container {
-        display: flex;
-        justify-content: center;
-        margin-bottom: 1rem;
-    }
-    .search-bar-input {
-        width: 100%;
-        max-width: 600px;
-        padding: 0.75rem 3rem 0.75rem 1rem;
-        border-radius: 8px;
-        border: none;
-        background: #23232b;
-        color: #fff;
-        font-size: 1rem;
-        outline: none;
-    }
-    .search-bar-btn {
-        position: relative;
-        right: 2.5rem;
-        border: none;
-        background: none;
-        cursor: pointer;
-        font-size: 1.3rem;
-        color: #fff;
-        top: 0.15rem;
-    }
-    .search-bar-form {
-        display: flex;
-        align-items: center;
-        width: 100%;
-        max-width: 600px;
-        margin: 0 auto;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
-    user_input = None
-    get_answer_clicked = False
-
-    with st_obj.form("search_form", clear_on_submit=False):
-        st_obj.markdown('<div class="search-bar-container"><div class="search-bar-form">', unsafe_allow_html=True)
-        user_input = st_obj.text_input(
-            "Your question",  # <-- non-empty label for accessibility
-            key="text_input",
-            placeholder="Type here...",
-            #label_visibility="collapsed"
-        )
-        submitted = st_obj.form_submit_button("🔍", use_container_width=False)
-        st_obj.markdown('</div></div>', unsafe_allow_html=True)
-        get_answer_clicked = submitted
-
     if user_input:
         st_obj.session_state.last_user_input = user_input
     elif user_text:
         st_obj.session_state.last_user_input = user_text
 
+    # Return the button state so main.py can use it
     return user_input, user_text, get_answer_clicked
 def render_answer_section(
     st_obj, 
@@ -206,32 +216,40 @@ def render_answer_section(
     if tts_available_flag:
         with st_obj.spinner("🔊 Generating voice response..."):
             try:
-                audio_data, lang_used_for_tts, cache_hit = generate_audio_func(
-                    text=clean_reply,
-                    lang_preference=voice_lang_pref
+                response = requests.post(
+                    "http://localhost:8000/tts/",
+                    data={"text": clean_reply, "lang_preference": voice_lang_pref}
                 )
+                if response.ok:
+                    resp_json = response.json()
+                    audio_base64 = resp_json.get("audio_base64")
+                    lang_used_for_tts = resp_json.get("lang_used")
+                    cache_hit = resp_json.get("cache_hit")
+                    audio_data = base64.b64decode(audio_base64) if audio_base64 else None
 
-                if voice_lang_pref != 'auto' and voice_lang_pref != lang_used_for_tts:
-                    st_obj.info(f"ℹ️ TTS was preferred in {lang_code_to_name_map.get(voice_lang_pref, voice_lang_pref)}, "
-                                f"but generated in {lang_code_to_name_map.get(lang_used_for_tts, lang_used_for_tts)}.")
-                elif lang_used_for_tts not in allowed_tts_langs_set and voice_lang_pref == 'auto':
-                     st_obj.info(f"ℹ️ Content detected as '{lang_code_to_name_map.get(lang_used_for_tts, lang_used_for_tts)}'. "
-                                 f"TTS may be generated in a default supported language.")
+                    if voice_lang_pref != 'auto' and voice_lang_pref != lang_used_for_tts:
+                        st_obj.info(f"ℹ️ TTS was preferred in {lang_code_to_name_map.get(voice_lang_pref, voice_lang_pref)}, "
+                                    f"but generated in {lang_code_to_name_map.get(lang_used_for_tts, lang_used_for_tts)}.")
+                    elif lang_used_for_tts not in allowed_tts_langs_set and voice_lang_pref == 'auto':
+                         st_obj.info(f"ℹ️ Content detected as '{lang_code_to_name_map.get(lang_used_for_tts, lang_used_for_tts)}'. "
+                                     f"TTS may be generated in a default supported language.")
 
-                if audio_data:
-                    lang_display = lang_code_to_name_map.get(lang_used_for_tts, str(lang_used_for_tts).capitalize())
-                    cache_indicator = "🧠 (Cached)" if cache_hit else "🆕 (Generated)"
-                    st_obj.info(f"🔊 Voice: {lang_display} | {cache_indicator}")
-                    
-                    audio_html = create_audio_player_html_func(
-                        audio_data,
-                        auto_play=st_obj.session_state.auto_play_tts
-                    )
-                    st_obj.markdown(audio_html, unsafe_allow_html=True)
-                elif not clean_reply.strip():
-                    st_obj.info("ℹ️ No text to speak.")
+                    if audio_data:
+                        lang_display = lang_code_to_name_map.get(lang_used_for_tts, str(lang_used_for_tts).capitalize())
+                        cache_indicator = "🧠 (Cached)" if cache_hit else "🆕 (Generated)"
+                        st_obj.info(f"🔊 Voice: {lang_display} | {cache_indicator}")
+                        
+                        audio_html = create_audio_player_html_func(
+                            audio_data,
+                            auto_play=st_obj.session_state.auto_play_tts
+                        )
+                        st_obj.markdown(audio_html, unsafe_allow_html=True)
+                    elif not clean_reply.strip():
+                        st_obj.info("ℹ️ No text to speak.")
+                    else:
+                        st_obj.warning("⚠️ Could not generate audio for this response.")
                 else:
-                    st_obj.warning("⚠️ Could not generate audio for this response.")
+                    st_obj.error(response.json().get("error", "Error occurred."))
             except Exception as audio_error:
                 st_obj.warning(f"🔊 TTS Error: {audio_error}")
     elif clean_reply.strip(): 
@@ -324,6 +342,6 @@ def render_footer(st_obj, selected_model):
     col1, col2 = st_obj.columns(2)
     with col1:
         if st_obj.session_state.chat_history:
-            st_obj.markdown(f"📊 **Session:** {len(st_obj.session_state.chat_history)} queries | Model: {selected_model}")
+            st_obj.markdown(f"📊 **Session:** {len(st_obj.session_state.chat_history)} queries ")
     with col2:
-        st_obj.markdown("💡 **Tip:** Use specific questions to avoid rate limits | 🔊 TTS available")
+        st.markdown("<div style='text-align: right; font-weight: bold;'>🔊 STT, 📃 TTS</div>",unsafe_allow_html=True)
