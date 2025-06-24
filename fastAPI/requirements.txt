@@ -1,0 +1,19 @@
+streamlit<=1.45.1
+python-dotenv
+langchain
+langchain-community
+langchain-groq
+sentence-transformers
+faiss-cpu
+groq
+pypdf
+XlsxWriter
+rank_bm25
+# for tts function
+gtts
+pygame 
+langdetect
+langid
+# for fastapi
+fastapi
+uvicorn
