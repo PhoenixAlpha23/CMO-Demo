@@ -65,71 +65,59 @@ def build_rag_chain_from_files(pdf_file, txt_file, groq_api_key, enhanced_mode=T
     This function is kept for potential direct use or as a base.
     `build_rag_chain_with_model_choice` is generally preferred.
     """
-    pdf_path = txt_path = None
-    if not (pdf_file or txt_file):
+    pdf_path = pdf_file if pdf_file else None
+    txt_path = txt_file if txt_file else None
+
+    if not (pdf_path or txt_path):
         raise ValueError("At least one file (PDF or TXT) must be provided.")
+
+    all_docs = []
+    if pdf_path:
+        all_docs.extend(PyPDFLoader(pdf_path).load())
+    if txt_path:
+        all_docs.extend(TextLoader(txt_path, encoding="utf-8").load())
+
+    if not all_docs:
+        raise ValueError("No valid documents loaded or documents are empty.")
+
+    # Adjust parameters based on model and mode
+    if model_choice == "llama-3.1-8b-instant":
+        chunk_size = 700 if enhanced_mode else 800
+        max_chunks = 10 if enhanced_mode else 12
+        max_tokens = 1500
+    else: # "llama-3.3-70b-versatile"
+        chunk_size = 600 if enhanced_mode else 700
+        max_chunks = 15 if enhanced_mode else 18
+        max_tokens = 2500
+
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size,
+        chunk_overlap=max(100, int(chunk_size * 0.2)), # Overlap as a percentage of chunk_size
+        separators=["\n\n", "\n", ". ", "! ", "? ", ", ", " ", ""],
+        length_function=len
+    )
+    splits = splitter.split_documents(all_docs)
     
-    temp_files_to_clean = []
-    try:
-        if pdf_file:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_pdf:
-                tmp_pdf.write(pdf_file.getvalue()) # Use getvalue() for UploadedFile
-                pdf_path = tmp_pdf.name
-                temp_files_to_clean.append(pdf_path)
-        if txt_file:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp_txt:
-                tmp_txt.write(txt_file.getvalue()) # Use getvalue() for UploadedFile
-                txt_path = tmp_txt.name
-                temp_files_to_clean.append(txt_path)
-
-        all_docs = []
-        if pdf_path:
-            all_docs.extend(PyPDFLoader(pdf_path).load())
-        if txt_path:
-            all_docs.extend(TextLoader(txt_path, encoding="utf-8").load())
+    if not splits:
+        raise ValueError("Document splitting resulted in no chunks. Check document content and splitter settings.")
         
-        if not all_docs:
-            raise ValueError("No valid documents loaded or documents are empty.")
+    retriever = TFIDFRetriever.from_documents(splits, k=min(max_chunks, len(splits)))
 
-        # Adjust parameters based on model and mode
-        if model_choice == "llama-3.1-8b-instant":
-            chunk_size = 700 if enhanced_mode else 800
-            max_chunks = 10 if enhanced_mode else 12
-            max_tokens = 1500
-        else: # "llama-3.3-70b-versatile"
-            chunk_size = 600 if enhanced_mode else 700
-            max_chunks = 15 if enhanced_mode else 18
-            max_tokens = 2500
-
-        splitter = RecursiveCharacterTextSplitter(
-            chunk_size=chunk_size,
-            chunk_overlap=max(100, int(chunk_size * 0.2)), # Overlap as a percentage of chunk_size
-            separators=["\n\n", "\n", ". ", "! ", "? ", ", ", " ", ""],
-            length_function=len
-        )
-        splits = splitter.split_documents(all_docs)
-        
-        if not splits:
-            raise ValueError("Document splitting resulted in no chunks. Check document content and splitter settings.")
-            
-        retriever = TFIDFRetriever.from_documents(splits, k=min(max_chunks, len(splits)))
-
-        template = """ You are an female efficient Knowledge Assistant, designed for answering questions specifically from the knowledge base provided to you.
+    template = """ You are an efficient Knowledge Assistant, designed for answering questions specifically from the knowledge base provided to you.
 
 Your task is as follows: give a detailed response for the user query in the user language (e.g., "what are some schemes?" --> "Here is a list of some schemes").
 
 Ensure your response follows these styles and tone:
-* read number as digits, e.g., "1,0,2" instead of "one hundered two"
 * Always answer in the **same language as the Question**, regardless of the language of the source documents.
 * If the source documents are in Marathi and the question is in English, **translate and summarize the information into English**.
 * If the question is in Marathi, answer in Marathi. Do the same for English and Hindi.
 * Use direct, everyday language.
 * Maintain a personal and friendly tone, aligned with the user's language.
-* Provide detailed responses, with **toll-free numbers** and **visible (non-hyperlinked) website URLs** *only if those URLs are present in the knowledge base*.
+* Provide detailed responses, with **toll-free numbers** and **visible (non-hyperlinked) website URLs** *only if those URLs are explicitly present in the knowledge base*. Do not invent or guess any web links.
 * Use section headers like "Description", "Eligibility", or for Marathi: "उद्देशः", "अंतर्भूत घटकः".
 * If there is no relevant context for the question, simply say:  
   - **In Marathi**: "क्षमस्व, मी या विषयावर तुमची मदत करू शकत नाही. अधिक माहितीसाठी, कृपया १०४/१०२ हेल्पलाइन क्रमांकावर संपर्क साधा."  
-  - **In Hindi**: "माफ़ कीजिए, मैं इस विषय पर आपकी मदद नहीं कर सकती। अधिक जानकारी के लिए कृपया 104/102 हेल्पलाइन नंबर पर संपर्क करें।"  
+  - **In Hindi**: "माफ़ कीजिए, मैं इस विषय पर आपकी मदत नहीं कर सकता। अधिक जानकारी के लिए कृपया 104/102 हेल्पलाइन नंबर पर संपर्क करें।"  
   - **In English**: "I'm sorry, I cannot assist with that topic. For more details, please contact the 104/102 helpline numbers."
 * **Remove duplicate information and provide only one consolidated answer.**
 * Do not provide answers based on assumptions or general knowledge. Use only the information provided in the knowledge base.
@@ -145,36 +133,31 @@ Now perform the task as instructed above.
 
 Answer:"""
 
-        custom_prompt = PromptTemplate(
-            template=template,
-            input_variables=["context", "question"]
-        )
-        chain_kwargs = {
-            "prompt": custom_prompt,
-            "verbose": True,  # For debugging
-        }
+    custom_prompt = PromptTemplate(
+        template=template,
+        input_variables=["context", "question"]
+    )
+    chain_kwargs = {
+        "prompt": custom_prompt,
+        "verbose": True,  # For debugging
+    }
+    
+    llm = ChatGroq(
+        api_key=groq_api_key, 
+        model=model_choice,
+        temperature=0.05,  # Keep it deterministic
+        max_tokens=max_tokens,
+        callbacks=[StrictContextCallback()]  # Add a custom callback to monitor responses
+    )
+    
+    return RetrievalQA.from_chain_type(
+        llm=llm,
+        chain_type="stuff",
+        retriever=retriever,
+        return_source_documents=False, # Set to True if you need to inspect sources
+        chain_type_kwargs=chain_kwargs
+    )
         
-        llm = ChatGroq(
-            api_key=groq_api_key, 
-            model=model_choice,
-            temperature=0.05,  # Keep it deterministic
-            max_tokens=max_tokens,
-            callbacks=[StrictContextCallback()]  # Add a custom callback to monitor responses
-        )
-        
-        return RetrievalQA.from_chain_type(
-            llm=llm,
-            chain_type="stuff",
-            retriever=retriever,
-            return_source_documents=False, # Set to True if you need to inspect sources
-            chain_type_kwargs=chain_kwargs
-        )
-            
-    finally:
-        for f_path in temp_files_to_clean:
-            if os.path.exists(f_path):
-                os.unlink(f_path)
-
 def build_rag_chain_with_model_choice(pdf_file, txt_file, groq_api_key, model_choice="llama-3.1-8b-instant", enhanced_mode=True):
     """
     Build RAG chain with selectable model. This is the primary RAG chain builder.
@@ -229,7 +212,7 @@ def process_scheme_query_with_retry(rag_chain, user_query, max_retries=3, enable
     query_hash = get_query_hash(user_query.lower().strip())
     cached_result = get_cached_result(query_hash)
     if cached_result:
-        result_text = cached_result  # Do NOT prepend [Cached]
+        result_text = f"[Cached] {cached_result}"
         cache_status = "cached"
     else:
         cache_status = "not_cached"
@@ -250,10 +233,12 @@ def process_scheme_query_with_retry(rag_chain, user_query, max_retries=3, enable
                     if isinstance(result, dict):
                         result_text = result.get('result', 'No results found.')
                     elif isinstance(result, tuple) and len(result) > 0:
+                        # If tuple, take first element as string
                         result_text = str(result[0])
                     else:
                         result_text = str(result)
-                # Cache only the raw answer
+                
+                # Cache successful result
                 cache_result(query_hash, result_text)
                 cache_status = "cached"
                 break

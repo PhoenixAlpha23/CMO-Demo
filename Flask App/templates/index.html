@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>CMRF AI Agent</title>
+    <style>
+        body { font-family: Arial; background: #f7f7f7; padding: 20px; }
+        .container { max-width: 900px; margin: auto; background: white; padding: 20px; border-radius: 10px; }
+        .header { text-align: center; }
+        .chat-box { margin-top: 20px; }
+        .chat-entry { margin-bottom: 15px; padding: 10px; background: #e9f5ff; border-radius: 8px; }
+        .chat-entry.user { background: #d1e7dd; }
+        .status { padding: 10px; margin-top: 10px; border-radius: 6px; }
+        .status.success { background: #d4edda; color: #155724; }
+        .status.danger { background: #f8d7da; color: #721c24; }
+        .status.warning { background: #fff3cd; color: #856404; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <img src="{{ url_for('static', filename='cmrf_logo.jpg') }}" width="250" />
+            <h1>🤖 CMRF AI AGENT</h1>
+        </div>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+              <div class="status {{ category }}">{{ message }}</div>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+
+        <form method="post" enctype="multipart/form-data">
+            <label>स्कीम तपशील पीडीएफ अपलोड करा:</label><br>
+            <input type="file" name="pdf_file" accept=".pdf"><br><br>
+
+            <label>आरेख योजना बुलेट अपलोड करा:</label><br>
+            <input type="file" name="txt_file" accept=".txt"><br><br>
+
+            <label>Ask a question:</label><br>
+            <input type="text" name="user_query" placeholder="e.g. मुख्यमंत्री योजना दाखवा" style="width:100%; padding: 8px;"><br><br>
+
+            <button type="submit">🔍 Get Answer</button>
+        </form>
+
+        {% if answer %}
+        <div class="chat-box">
+            <div class="chat-entry user">
+                <strong>You:</strong> {{ chat_history[0].user }}
+            </div>
+            <div class="chat-entry">
+                <strong>CMRF Agent:</strong> {{ answer }}
+            </div>
+            {% if audio_url %}
+                <audio controls>
+                    <source src="{{ audio_url }}" type="audio/mpeg">
+                    Your browser does not support the audio element.
+                </audio>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <hr>
+        <h3>Past Queries</h3>
+        {% for chat in chat_history[1:] %}
+            <div class="chat-entry user"><strong>You:</strong> {{ chat.user }}</div>
+            <div class="chat-entry"><strong>CMRF Agent:</strong> {{ chat.assistant }}</div>
+        {% endfor %}
+    </div>
+</body>
+</html>
