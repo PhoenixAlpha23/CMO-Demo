@@ -2,7 +2,8 @@ import streamlit as st
 import pandas as pd # Required for chat history download
 import io # Required for chat history download
 import time # Required for chat history download/timestamp
-
+import requests
+import base64
 def inject_chat_styles():
     """Injects CSS styles for the modern chat layout while maintaining original functionality."""
     st.markdown("""
@@ -81,6 +82,20 @@ def render_file_uploaders(st_obj):
         )
         if uploaded_files:
             st_obj.session_state.uploaded_files = uploaded_files
+
+            for file in uploaded_files:
+                files = {}
+                if file.name.lower().endswith(".pdf"):
+                    files["pdf_file"] = (file.name, file.getvalue(), "application/pdf")
+                elif file.name.lower().endswith(".txt"):
+                    files["txt_file"] = (file.name, file.getvalue(), "text/plain")
+                if files:
+                    response = requests.post("http://localhost:8000/upload/", files=files)
+                    if response.ok:
+                        st_obj.success("File uploaded and processed by backend.")
+                    else:
+                        st_obj.error(f"Upload failed: {response.text}")
+
             st_obj.rerun()
         return None, None
     else:
@@ -115,6 +130,19 @@ def render_query_input(st_obj, whisper_client, transcribe_audio_func):
         col_left, col_center, col_right = st_obj.columns([1, 2, 1])
         with col_center:
             get_answer_clicked = st_obj.button("🔍 Get Answer", type="primary", use_container_width=True)
+            if get_answer_clicked:
+                payload = {"input_text": user_input,
+                            "model": "llama-3.3-70b-versatile",
+                            "enhanced_mode": True,
+                            "voice_lang_pref": "auto"
+                            }
+                response = requests.post(
+                    "http://localhost:8000/query/",
+                    json=payload)
+                if response.ok:
+                    st.write(response.json().get("reply", "No reply received."))
+                else:
+                    st.error(response.json().get("error", "Error occurred."))
 
     # CSS to make input stick to bottom when chat exists
     if st_obj.session_state.get('chat_history', []):
@@ -188,32 +216,40 @@ def render_answer_section(
     if tts_available_flag:
         with st_obj.spinner("🔊 Generating voice response..."):
             try:
-                audio_data, lang_used_for_tts, cache_hit = generate_audio_func(
-                    text=clean_reply,
-                    lang_preference=voice_lang_pref
+                response = requests.post(
+                    "http://localhost:8000/tts/",
+                    data={"text": clean_reply, "lang_preference": voice_lang_pref}
                 )
+                if response.ok:
+                    resp_json = response.json()
+                    audio_base64 = resp_json.get("audio_base64")
+                    lang_used_for_tts = resp_json.get("lang_used")
+                    cache_hit = resp_json.get("cache_hit")
+                    audio_data = base64.b64decode(audio_base64) if audio_base64 else None
 
-                if voice_lang_pref != 'auto' and voice_lang_pref != lang_used_for_tts:
-                    st_obj.info(f"ℹ️ TTS was preferred in {lang_code_to_name_map.get(voice_lang_pref, voice_lang_pref)}, "
-                                f"but generated in {lang_code_to_name_map.get(lang_used_for_tts, lang_used_for_tts)}.")
-                elif lang_used_for_tts not in allowed_tts_langs_set and voice_lang_pref == 'auto':
-                     st_obj.info(f"ℹ️ Content detected as '{lang_code_to_name_map.get(lang_used_for_tts, lang_used_for_tts)}'. "
-                                 f"TTS may be generated in a default supported language.")
+                    if voice_lang_pref != 'auto' and voice_lang_pref != lang_used_for_tts:
+                        st_obj.info(f"ℹ️ TTS was preferred in {lang_code_to_name_map.get(voice_lang_pref, voice_lang_pref)}, "
+                                    f"but generated in {lang_code_to_name_map.get(lang_used_for_tts, lang_used_for_tts)}.")
+                    elif lang_used_for_tts not in allowed_tts_langs_set and voice_lang_pref == 'auto':
+                         st_obj.info(f"ℹ️ Content detected as '{lang_code_to_name_map.get(lang_used_for_tts, lang_used_for_tts)}'. "
+                                     f"TTS may be generated in a default supported language.")
 
-                if audio_data:
-                    lang_display = lang_code_to_name_map.get(lang_used_for_tts, str(lang_used_for_tts).capitalize())
-                    cache_indicator = "🧠 (Cached)" if cache_hit else "🆕 (Generated)"
-                    st_obj.info(f"🔊 Voice: {lang_display} | {cache_indicator}")
-                    
-                    audio_html = create_audio_player_html_func(
-                        audio_data,
-                        auto_play=st_obj.session_state.auto_play_tts
-                    )
-                    st_obj.markdown(audio_html, unsafe_allow_html=True)
-                elif not clean_reply.strip():
-                    st_obj.info("ℹ️ No text to speak.")
+                    if audio_data:
+                        lang_display = lang_code_to_name_map.get(lang_used_for_tts, str(lang_used_for_tts).capitalize())
+                        cache_indicator = "🧠 (Cached)" if cache_hit else "🆕 (Generated)"
+                        st_obj.info(f"🔊 Voice: {lang_display} | {cache_indicator}")
+                        
+                        audio_html = create_audio_player_html_func(
+                            audio_data,
+                            auto_play=st_obj.session_state.auto_play_tts
+                        )
+                        st_obj.markdown(audio_html, unsafe_allow_html=True)
+                    elif not clean_reply.strip():
+                        st_obj.info("ℹ️ No text to speak.")
+                    else:
+                        st_obj.warning("⚠️ Could not generate audio for this response.")
                 else:
-                    st_obj.warning("⚠️ Could not generate audio for this response.")
+                    st_obj.error(response.json().get("error", "Error occurred."))
             except Exception as audio_error:
                 st_obj.warning(f"🔊 TTS Error: {audio_error}")
     elif clean_reply.strip(): 
