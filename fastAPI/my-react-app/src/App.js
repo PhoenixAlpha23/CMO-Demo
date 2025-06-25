@@ -160,18 +160,22 @@ function App() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
       {/* Header */}
-      <header className="bg-white/80 backdrop-blur-md border-b border-white/20 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-2">
-                <Bot className="w-8 h-8 text-blue-600" />
-                <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-                  CMRF AI Agent
-                </h1>
-              </div>
-            </div>
+      <header className="bg-white/80 backdrop-blur-md border-b border-white/20 sticky top-0 z-50 relative">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative">
+          <div className="absolute right-8 top-8">
             <StatusBar isApiAvailable={isApiAvailable} ragInitialized={ragInitialized} />
+          </div>
+          <div className="flex flex-col items-center justify-center h-32">
+            <div className="flex items-center space-x-4 justify-center">
+              <img
+                src="/cmrf-logo-removebg-preview.png"
+                alt="CMRF Logo"
+                className="w-24 h-24 rounded-full object-cover shadow"
+              />
+              <h1 className="text-6xl font-extrabold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent text-center">
+                CMRF AI Agent
+              </h1>
+            </div>
           </div>
         </div>
       </header>
