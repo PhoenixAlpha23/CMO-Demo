@@ -14,7 +14,7 @@ import pickle
 from contextlib import asynccontextmanager
 import os
 from groq import Groq
-import re
+import asyncio
 
 # Core services
 from core.rag_services import build_rag_chain_with_model_choice, process_scheme_query_with_retry
@@ -37,23 +37,7 @@ class RedisManager:
         self._connect()
     
     def _connect(self):
-        try:
-            self.redis_client = redis.Redis(
-                host=REDIS_HOST,
-                port=REDIS_PORT,
-                db=REDIS_DB,
-                password=REDIS_PASSWORD,
-                decode_responses=False,  # Keep as bytes for pickle
-                socket_timeout=5,
-                socket_connect_timeout=5,
-                retry_on_timeout=True
-            )
-            # Test connection
-            self.redis_client.ping()
-            print("Redis connected successfully")
-        except Exception as e:
-            print(f"Redis connection failed: {e}")
-            self.redis_client = None
+        self.redis_client = None  # Force Redis to be unavailable for now
     
     def reconnect(self):
         """Reconnect to Redis if connection is lost."""
@@ -72,7 +56,7 @@ class RedisManager:
     
     def set_rag_chain(self, key: str, rag_chain, expire_hours: int = 24):
         """Store RAG chain with expiration"""
-        if not self.is_available():
+        if not self.is_available() or self.redis_client is None:
             return False
         try:
             serialized = pickle.dumps(rag_chain)
@@ -84,10 +68,12 @@ class RedisManager:
     
     def get_rag_chain(self, key: str):
         """Retrieve RAG chain"""
-        if not self.is_available():
+        if not self.is_available() or self.redis_client is None:
             return None
         try:
             data = self.redis_client.get(f"rag_chain:{key}")
+            if hasattr(data, '__await__') or not isinstance(data, (bytes, bytearray)):
+                return None
             if data:
                 return pickle.loads(data)
             return None
@@ -97,7 +83,7 @@ class RedisManager:
     
     def set_chat_history(self, session_id: str, history: List[dict], expire_hours: int = 48):
         """Store chat history"""
-        if not self.is_available():
+        if not self.is_available() or self.redis_client is None:
             return False
         try:
             serialized = json.dumps(history)
@@ -109,12 +95,17 @@ class RedisManager:
     
     def get_chat_history(self, session_id: str) -> List[dict]:
         """Retrieve chat history"""
-        if not self.is_available():
+        if not self.is_available() or self.redis_client is None:
             return []
         try:
             data = self.redis_client.get(f"chat:{session_id}")
+            if hasattr(data, '__await__') or not isinstance(data, (bytes, bytearray)):
+                return []
             if data:
-                return json.loads(data.decode('utf-8'))
+                try:
+                    return json.loads(data.decode('utf-8'))
+                except Exception:
+                    return []
             return []
         except Exception as e:
             print(f"Failed to retrieve chat history: {e}")
@@ -130,7 +121,7 @@ class RedisManager:
     
     def set_rate_limit(self, key: str, expire_seconds: int = 60):
         """Set rate limit marker"""
-        if not self.is_available():
+        if not self.is_available() or self.redis_client is None:
             return False
         try:
             self.redis_client.setex(f"rate_limit:{key}", expire_seconds, "1")
@@ -140,10 +131,13 @@ class RedisManager:
     
     def check_rate_limit(self, key: str) -> bool:
         """Check if rate limited"""
-        if not self.is_available():
+        if not self.is_available() or self.redis_client is None:
             return False
         try:
-            return self.redis_client.exists(f"rate_limit:{key}") > 0
+            result = self.redis_client.exists(f"rate_limit:{key}")
+            if hasattr(result, '__await__') or not isinstance(result, int):
+                return False
+            return result > 0
         except Exception:
             return False
 
@@ -225,17 +219,13 @@ class QueryRequest(BaseModel):
     voice_lang_pref: str = "auto"
     session_id: Optional[str] = None
 
-def bold_asterisk_headers(text: str) -> str:
-    """Convert **Header** to Markdown bold for all output."""
-    return re.sub(r"\*\*(.*?)\*\*", r"**\1**", text)
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
     print("Starting up FastAPI application...")
     yield
     # Shutdown
-    if redis_manager.is_available():
+    if redis_manager.is_available() and redis_manager.redis_client is not None:
         redis_manager.redis_client.close()
     print("FastAPI application shutting down...")
 
@@ -269,8 +259,8 @@ async def upload_files(
         if not (pdf_file or txt_file):
             return JSONResponse(status_code=400, content={"error": "Please upload at least one file (PDF or TXT)."})
 
-        pdf_name = pdf_file.filename if pdf_file else "None"
-        txt_name = txt_file.filename if txt_file else "None"
+        pdf_name = pdf_file.filename if pdf_file and pdf_file.filename else ""
+        txt_name = txt_file.filename if txt_file and txt_file.filename else ""
         
         # Generate model key
         model_key = generate_model_key("llama-3.3-70b-versatile", True, pdf_name, txt_name)
@@ -322,12 +312,19 @@ async def get_answer(req: QueryRequest):
         # Get appropriate RAG chain (simplified - you might want to pass model_key)
         # For now, try to get any available chain
         rag_chain = None
-        if redis_manager.is_available():
+        if redis_manager.is_available() and redis_manager.redis_client is not None:
             # Try to get the most recent chain (this is simplified)
             try:
                 keys = redis_manager.redis_client.keys("rag_chain:*")
+                if hasattr(keys, '__await__'):
+                    keys = []
+                if not hasattr(keys, '__getitem__') or not hasattr(keys, '__iter__'):
+                    keys = []
                 if keys:
-                    rag_chain = redis_manager.get_rag_chain(keys[0].decode().replace("rag_chain:", ""))
+                    key0 = keys[0]
+                    if hasattr(key0, 'decode'):
+                        key0 = key0.decode()
+                    rag_chain = redis_manager.get_rag_chain(key0.replace("rag_chain:", ""))
             except Exception:
                 pass
         
@@ -340,9 +337,6 @@ async def get_answer(req: QueryRequest):
 
         result = process_scheme_query_with_retry(rag_chain, input_text)
         assistant_reply = result[0] if isinstance(result, tuple) else result or "No response received"
-        
-        # Make headers bold in output
-        assistant_reply = bold_asterisk_headers(assistant_reply)
         
         # Store chat message
         message = {
@@ -425,11 +419,19 @@ async def transcribe_audio_endpoint(
 
 @app.get("/sessions/")
 async def list_sessions():
-    if not redis_manager.is_available():
+    if not redis_manager.is_available() or redis_manager.redis_client is None:
         return {"error": "Redis not available"}
     try:
         keys = redis_manager.redis_client.keys("chat:*")
-        sessions = [key.decode().replace("chat:", "") for key in keys]
+        if hasattr(keys, '__await__'):
+            keys = []
+        if not hasattr(keys, '__iter__') or not hasattr(keys, '__getitem__'):
+            keys = []
+        sessions = []
+        for key in keys:
+            if hasattr(key, 'decode'):
+                key = key.decode()
+            sessions.append(key.replace("chat:", ""))
         return {"sessions": sessions}
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
@@ -437,7 +439,7 @@ async def list_sessions():
 @app.delete("/sessions/{session_id}")
 async def clear_session(session_id: str):
     try:
-        if redis_manager.is_available():
+        if redis_manager.is_available() and redis_manager.redis_client is not None:
             redis_manager.redis_client.delete(f"chat:{session_id}")
             return {"message": f"Session {session_id} cleared"}
         else:
@@ -452,33 +454,51 @@ async def websocket_transcribe(websocket: WebSocket):
     await websocket.accept()
     audio_bytes = bytearray()
     groq_client = get_groq_client()
+    partial_task = None
+    stop_partial = False
+    lock = asyncio.Lock()
+    last_partial_sent = b""
+
+    async def send_partial():
+        nonlocal last_partial_sent
+        while not stop_partial:
+            await asyncio.sleep(2)  # every 2 seconds
+            async with lock:
+                if len(audio_bytes) > 16000:  # Only send if enough audio (about 1s at 16kHz)
+                    try:
+                        # Only send if new audio since last partial
+                        if audio_bytes != last_partial_sent:
+                            success, result = transcribe_audio(groq_client, bytes(audio_bytes))
+                            if success:
+                                await websocket.send_text(json.dumps({"partial": result}))
+                                last_partial_sent = bytes(audio_bytes)
+                    except Exception as e:
+                        await websocket.send_text(json.dumps({"error": f"Partial transcription failed: {str(e)}"}))
+                        break
+
     try:
+        stop_partial = False
+        partial_task = asyncio.create_task(send_partial())
         while True:
-            message = await websocket.receive()
-            if "bytes" in message:
-                chunk = message["bytes"]
-                if not chunk:
-                    continue
-                audio_bytes.extend(chunk)
-                # Transcribe only the latest chunk for partial
-                try:
-                    success, partial_result = transcribe_audio(groq_client, chunk)
-                    if success and partial_result:
-                        await websocket.send_text(json.dumps({"partial": partial_result}))
-                except Exception as e:
-                    await websocket.send_text(json.dumps({"error": f"Partial transcription failed: {str(e)}"}))
-            elif "text" in message:
-                # Handle end event
-                if message["text"] == '{"event":"end"}' or message["text"] == '{"event": "end"}':
-                    break
+            data = await websocket.receive_bytes()
+            if data == b"":
+                break
+            async with lock:
+                audio_bytes.extend(data)
     except WebSocketDisconnect:
         pass
     except Exception as e:
         await websocket.send_text(json.dumps({"error": str(e)}))
         await websocket.close()
+        stop_partial = True
+        if partial_task:
+            await partial_task
         return
     # Final transcription after receiving all audio
     try:
+        stop_partial = True
+        if partial_task:
+            await partial_task
         success, result = transcribe_audio(groq_client, bytes(audio_bytes))
         if success:
             await websocket.send_text(json.dumps({"final": result}))
