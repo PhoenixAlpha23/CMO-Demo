@@ -2,6 +2,10 @@ import React, { useState } from 'react';
 import { MessageCircle, User, Bot, Volume2, Copy, CheckCircle, Loader2, Clock, Download } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
+function parseMarkdownBold(text) {
+  return text.replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold">$1</strong>');
+}
+
 const ChatHistory = ({ chatHistory, onGenerateTTS }) => {
   const [playingIndex, setPlayingIndex] = useState(null);
   const [generatingTTSIndex, setGeneratingTTSIndex] = useState(null);
@@ -166,9 +170,10 @@ const ChatHistory = ({ chatHistory, onGenerateTTS }) => {
                     </button>
                   </div>
                 </div>
-                <div className="text-green-900 leading-relaxed whitespace-pre-wrap">
-                  {chat.assistant}
-                </div>
+                <div
+                  className="text-gray-700 leading-relaxed whitespace-pre-wrap"
+                  dangerouslySetInnerHTML={{ __html: parseMarkdownBold(chat.assistant) }}
+                />
               </div>
             </div>
           </div>

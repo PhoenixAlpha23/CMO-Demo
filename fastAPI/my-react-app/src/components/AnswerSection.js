@@ -1,6 +1,11 @@
 import React, { useState } from 'react';
 import { Volume2, VolumeX, Copy, CheckCircle, Loader2 } from 'lucide-react';
 
+// Simple bold markdown parser for **text**
+function parseMarkdownBold(text) {
+  return text.replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold">$1</strong>');
+}
+
 const AnswerSection = ({ answer, onGenerateTTS }) => {
   const [isPlayingTTS, setIsPlayingTTS] = useState(false);
   const [isGeneratingTTS, setIsGeneratingTTS] = useState(false);
@@ -96,9 +101,9 @@ const AnswerSection = ({ answer, onGenerateTTS }) => {
       </div>
       
       <div className="prose prose-blue max-w-none">
-        <div className="text-gray-700 leading-relaxed whitespace-pre-wrap">
-          {answer}
-        </div>
+        <div className="text-gray-700 leading-relaxed whitespace-pre-wrap"
+          dangerouslySetInnerHTML={{ __html: parseMarkdownBold(answer) }}
+        />
       </div>
     </div>
   );
