@@ -1,5 +1,6 @@
 from fastapi import FastAPI, File, UploadFile, Form, Depends, HTTPException
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
 import time
@@ -53,7 +54,19 @@ class RedisManager:
             print(f"Redis connection failed: {e}")
             self.redis_client = None
     
+    def reconnect(self):
+        """Reconnect to Redis if connection is lost."""
+        self._connect()
+    
     def is_available(self) -> bool:
+        if self.redis_client is None:
+            self.reconnect()
+        try:
+            if self.redis_client:
+                self.redis_client.ping()
+                return True
+        except Exception:
+            self.reconnect()
         return self.redis_client is not None
     
     def set_rag_chain(self, key: str, rag_chain, expire_hours: int = 24):
@@ -223,6 +236,23 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="CMRF AI Agent", lifespan=lifespan)
 
+# Enable CORS for all origins (for development). For production, specify allowed origins.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Change to ["http://localhost:3000"] for more security
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.get("/")
+async def root():
+    try:
+        redis_status = redis_manager.is_available()
+        return {"message": "CMRF AI Agent FastAPI backend is running.", "docs": "/docs", "health": "/health/", "redis_available": redis_status}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": f"Startup error: {str(e)}"})
+
 @app.post("/upload/")
 async def upload_files(
     pdf_file: Optional[UploadFile] = File(None), 
@@ -230,21 +260,21 @@ async def upload_files(
     session_id: str = Depends(get_session_id),
     groq_client: Groq = Depends(get_groq_client)
 ):
-    if not (pdf_file or txt_file):
-        return JSONResponse(status_code=400, content={"error": "Please upload at least one file (PDF or TXT)."})
-
-    pdf_name = pdf_file.filename if pdf_file else "None"
-    txt_name = txt_file.filename if txt_file else "None"
-    
-    # Generate model key
-    model_key = generate_model_key("llama-3.3-70b-versatile", True, pdf_name, txt_name)
-
-    # Check if RAG chain already exists
-    existing_chain = state_manager.get_rag_chain(model_key)
-    if existing_chain is not None:
-        return {"message": "RAG system already initialized.", "model_key": model_key}
-
     try:
+        if not (pdf_file or txt_file):
+            return JSONResponse(status_code=400, content={"error": "Please upload at least one file (PDF or TXT)."})
+
+        pdf_name = pdf_file.filename if pdf_file else "None"
+        txt_name = txt_file.filename if txt_file else "None"
+        
+        # Generate model key
+        model_key = generate_model_key("llama-3.3-70b-versatile", True, pdf_name, txt_name)
+
+        # Check if RAG chain already exists
+        existing_chain = state_manager.get_rag_chain(model_key)
+        if existing_chain is not None:
+            return {"message": "RAG system already initialized.", "model_key": model_key}
+
         # Read files
         pdf_bytes = await pdf_file.read() if pdf_file else None
         txt_bytes = await txt_file.read() if txt_file else None
@@ -272,37 +302,37 @@ async def upload_files(
 
 @app.post("/query/")
 async def get_answer(req: QueryRequest):
-    input_text = req.input_text.strip()
-    if not input_text:
-        return JSONResponse(status_code=400, content={"error": "Empty query input."})
-
-    session_id = req.session_id or "default"
-    
-    # Enhanced rate limiting
-    wait_time = improved_rate_limit_check(session_id)
-    if wait_time:
-        return JSONResponse(status_code=429, content={"message": f"Rate limited. Wait {wait_time:.1f} seconds."})
-
-    # Get appropriate RAG chain (simplified - you might want to pass model_key)
-    # For now, try to get any available chain
-    rag_chain = None
-    if redis_manager.is_available():
-        # Try to get the most recent chain (this is simplified)
-        try:
-            keys = redis_manager.redis_client.keys("rag_chain:*")
-            if keys:
-                rag_chain = redis_manager.get_rag_chain(keys[0].decode().replace("rag_chain:", ""))
-        except Exception:
-            pass
-    
-    if not rag_chain:
-        # Fallback to memory state
-        rag_chain = state_manager._memory_state.get("rag_chain")
-    
-    if not rag_chain:
-        return JSONResponse(status_code=400, content={"error": "No RAG system initialized. Please upload files first."})
-
     try:
+        input_text = req.input_text.strip()
+        if not input_text:
+            return JSONResponse(status_code=400, content={"error": "Empty query input."})
+
+        session_id = req.session_id or "default"
+        
+        # Enhanced rate limiting
+        wait_time = improved_rate_limit_check(session_id)
+        if wait_time:
+            return JSONResponse(status_code=429, content={"message": f"Rate limited. Wait {wait_time:.1f} seconds."})
+
+        # Get appropriate RAG chain (simplified - you might want to pass model_key)
+        # For now, try to get any available chain
+        rag_chain = None
+        if redis_manager.is_available():
+            # Try to get the most recent chain (this is simplified)
+            try:
+                keys = redis_manager.redis_client.keys("rag_chain:*")
+                if keys:
+                    rag_chain = redis_manager.get_rag_chain(keys[0].decode().replace("rag_chain:", ""))
+            except Exception:
+                pass
+        
+        if not rag_chain:
+            # Fallback to memory state
+            rag_chain = state_manager._memory_state.get("rag_chain")
+        
+        if not rag_chain:
+            return JSONResponse(status_code=400, content={"error": "No RAG system initialized. Please upload files first."})
+
         result = process_scheme_query_with_retry(rag_chain, input_text)
         assistant_reply = result[0] if isinstance(result, tuple) else result or "No response received"
         
@@ -320,24 +350,25 @@ async def get_answer(req: QueryRequest):
             "session_id": session_id,
             "redis_available": redis_manager.is_available()
         }
-        
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": f"{str(e)}"})
 
 @app.get("/chat-history/")
 async def get_chat_history(session_id: str = Depends(get_session_id)):
-    history = state_manager.get_chat_history(session_id)
-    return {
-        "chat_history": history,
-        "session_id": session_id,
-        "redis_available": redis_manager.is_available()
-    }
+    try:
+        history = state_manager.get_chat_history(session_id)
+        return {
+            "chat_history": history,
+            "session_id": session_id,
+            "redis_available": redis_manager.is_available()
+        }
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": f"{str(e)}"})
 
 @app.post("/tts/")
 async def get_audio(text: str = Form(...), lang_preference: str = Form("auto")):
     if not TTS_AVAILABLE:
         return JSONResponse(status_code=501, content={"error": "TTS not available."})
-
     try:
         audio_data, lang_used, cache_hit = generate_audio_response(
             text=text,
@@ -353,11 +384,21 @@ async def get_audio(text: str = Form(...), lang_preference: str = Form("auto")):
 
 @app.get("/health/")
 async def health_check():
-    return {
-        "status": "ok",
-        "redis_available": redis_manager.is_available(),
-        "timestamp": time.time()
-    }
+    try:
+        redis_status = redis_manager.is_available()
+        groq_status = True
+        try:
+            _ = get_groq_client()
+        except Exception:
+            groq_status = False
+        return {
+            "status": "ok",
+            "redis_available": redis_status,
+            "groq_available": groq_status,
+            "timestamp": time.time()
+        }
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": f"Health check failed: {str(e)}"})
 
 @app.post("/transcribe/")
 async def transcribe_audio_endpoint(
@@ -374,13 +415,10 @@ async def transcribe_audio_endpoint(
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": f"Transcription failed: {str(e)}"})
 
-# Additional utility endpoints
 @app.get("/sessions/")
 async def list_sessions():
-    """List all active sessions (Redis only)"""
     if not redis_manager.is_available():
         return {"error": "Redis not available"}
-    
     try:
         keys = redis_manager.redis_client.keys("chat:*")
         sessions = [key.decode().replace("chat:", "") for key in keys]
@@ -390,17 +428,16 @@ async def list_sessions():
 
 @app.delete("/sessions/{session_id}")
 async def clear_session(session_id: str):
-    """Clear a specific session"""
-    if redis_manager.is_available():
-        try:
+    try:
+        if redis_manager.is_available():
             redis_manager.redis_client.delete(f"chat:{session_id}")
             return {"message": f"Session {session_id} cleared"}
-        except Exception as e:
-            return JSONResponse(status_code=500, content={"error": str(e)})
-    else:
-        if session_id == "default":
-            state_manager._memory_state["chat_history"] = []
-        return {"message": f"Session {session_id} cleared (memory only)"}
+        else:
+            if session_id == "default":
+                state_manager._memory_state["chat_history"] = []
+            return {"message": f"Session {session_id} cleared (memory only)"}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 if __name__ == "__main__":
     import uvicorn
