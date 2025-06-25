@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, Form, Depends, HTTPException
+from fastapi import FastAPI, File, UploadFile, Form, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -438,6 +438,37 @@ async def clear_session(session_id: str):
             return {"message": f"Session {session_id} cleared (memory only)"}
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
+
+@app.websocket("/ws/transcribe")
+async def websocket_transcribe(websocket: WebSocket):
+    await websocket.accept()
+    audio_bytes = bytearray()
+    groq_client = get_groq_client()
+    try:
+        while True:
+            data = await websocket.receive_bytes()
+            if data == b"":
+                break
+            audio_bytes.extend(data)
+            # Optionally, send partial transcription here if your backend supports it
+            # For now, just accumulate
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        await websocket.send_text(json.dumps({"error": str(e)}))
+        await websocket.close()
+        return
+    # Final transcription after receiving all audio
+    try:
+        success, result = transcribe_audio(groq_client, bytes(audio_bytes))
+        if success:
+            await websocket.send_text(json.dumps({"final": result}))
+        else:
+            await websocket.send_text(json.dumps({"error": result}))
+    except Exception as e:
+        await websocket.send_text(json.dumps({"error": f"Transcription failed: {str(e)}"}))
+    finally:
+        await websocket.close()
 
 if __name__ == "__main__":
     import uvicorn
