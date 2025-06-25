@@ -305,26 +305,17 @@ def main():
                     if success:
                         assistant_reply = result.get("reply", "No response received")
                         
-                        # Update local chat history
-                        chat_entry = {
-                            "user": input_text,
-                            "assistant": assistant_reply,
-                            "model": selected_model,
-                            "timestamp": time.strftime("%H:%M:%S")
-                        }
-                        st.session_state.chat_history.insert(0, chat_entry)
-                        
-                        # Render answer with TTS
-                        render_answer_section(
-                            st,
-                            assistant_reply,
-                            api_generate_audio_response,  # Use API TTS
-                            create_audio_player_html,
-                            voice_lang_pref,
-                            LANG_CODE_TO_NAME,
-                            ALLOWED_TTS_LANGS,
-                            True  # TTS_AVAILABLE = True (API handles availability)
-                        )
+                        # REMOVE or COMMENT OUT this block:
+                        # render_answer_section(
+                        #     st,
+                        #     assistant_reply,
+                        #     api_generate_audio_response,  # Use API TTS
+                        #     create_audio_player_html,
+                        #     voice_lang_pref,
+                        #     LANG_CODE_TO_NAME,
+                        #     ALLOWED_TTS_LANGS,
+                        #     True  # TTS_AVAILABLE = True (API handles availability)
+                        # )
                     else:
                         error_msg = result.get("error", "Unknown error")
                         if "rate limited" in error_msg.lower() or result.get("message", "").startswith("Rate limited"):

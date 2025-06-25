@@ -17,3 +17,6 @@ langid
 # for fastapi
 fastapi
 uvicorn
+python-multipart
+#for caching
+redis
