@@ -17,6 +17,7 @@ function App() {
   const [uploadedFiles, setUploadedFiles] = useState({ pdf: null, txt: null });
   const [activeTab, setActiveTab] = useState('upload');
   const [langWarning, setLangWarning] = useState('');
+  const [isRagBuilding, setIsRagBuilding] = useState(false);
 
   useEffect(() => {
     checkApiAvailability();
@@ -44,17 +45,19 @@ function App() {
   };
 
   const handleFileUpload = async (pdfFile, txtFile) => {
-    setIsLoading(true);
+    setIsRagBuilding(true);
     try {
       const result = await apiClient.uploadFiles(pdfFile, txtFile);
       setUploadedFiles({ pdf: pdfFile, txt: txtFile });
       setRagInitialized(true);
       setActiveTab('chat');
+      // After upload, call your backend to build RAG system
+      // await buildRagSystem(files); // your function
       return { success: true, message: result.message };
     } catch (error) {
       return { success: false, message: error.message };
     } finally {
-      setIsLoading(false);
+      setIsRagBuilding(false);
     }
   };
 
@@ -246,6 +249,7 @@ function App() {
                     onTranscribeAudio={handleTranscribeAudio}
                     isLoading={isLoading}
                     enableEnterSubmit={true}
+                    isRagBuilding={isRagBuilding}
                   />
                   {langWarning && (
                     <span className="absolute right-0 top-0 mt-2 mr-2 text-xs text-red-600 font-medium">

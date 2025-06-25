@@ -14,6 +14,7 @@ import pickle
 from contextlib import asynccontextmanager
 import os
 from groq import Groq
+import re
 
 # Core services
 from core.rag_services import build_rag_chain_with_model_choice, process_scheme_query_with_retry
@@ -224,6 +225,10 @@ class QueryRequest(BaseModel):
     voice_lang_pref: str = "auto"
     session_id: Optional[str] = None
 
+def bold_asterisk_headers(text: str) -> str:
+    """Convert **Header** to Markdown bold for all output."""
+    return re.sub(r"\*\*(.*?)\*\*", r"**\1**", text)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
@@ -335,6 +340,9 @@ async def get_answer(req: QueryRequest):
 
         result = process_scheme_query_with_retry(rag_chain, input_text)
         assistant_reply = result[0] if isinstance(result, tuple) else result or "No response received"
+        
+        # Make headers bold in output
+        assistant_reply = bold_asterisk_headers(assistant_reply)
         
         # Store chat message
         message = {
@@ -450,8 +458,14 @@ async def websocket_transcribe(websocket: WebSocket):
             if data == b"":
                 break
             audio_bytes.extend(data)
-            # Optionally, send partial transcription here if your backend supports it
-            # For now, just accumulate
+            # Transcribe the current chunk and send as partial
+            try:
+                # You may want to only use the last N seconds for partial
+                success, partial_result = transcribe_audio(groq_client, bytes(audio_bytes))
+                if success and partial_result:
+                    await websocket.send_text(json.dumps({"partial": partial_result}))
+            except Exception as e:
+                await websocket.send_text(json.dumps({"error": f"Partial transcription failed: {str(e)}"}))
     except WebSocketDisconnect:
         pass
     except Exception as e:

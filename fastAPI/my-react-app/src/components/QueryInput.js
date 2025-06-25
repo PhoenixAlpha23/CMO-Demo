@@ -1,7 +1,15 @@
 import React, { useState, useRef } from 'react';
 import { Send, Mic, MicOff, Loader2 } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
 
-const QueryInput = ({ onSubmit, onTranscribeAudio, isLoading, placeholderText = '' }) => {
+const QueryInput = ({
+  onSubmit,
+  onTranscribeAudio,
+  isLoading,
+  placeholderText = '',
+  isRagBuilding,
+  assistantReply, // <-- add this prop
+}) => {
   const [inputText, setInputText] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -116,6 +124,14 @@ const QueryInput = ({ onSubmit, onTranscribeAudio, isLoading, placeholderText = 
 
   return (
     <div className="flex flex-col items-center space-y-4">
+      {/* Show loader when building RAG system */}
+      {isRagBuilding && (
+        <div className="flex items-center space-x-2 text-blue-600 text-lg font-semibold mb-2">
+          <Loader2 className="w-6 h-6 animate-spin" />
+          <span>Building RAG system, please wait...</span>
+        </div>
+      )}
+
       {/* Speech bubble for transcription or status */}
       <div className="mb-2">
         <div className="rounded-xl shadow-lg px-6 py-3 bg-white text-gray-800 text-xl text-center min-w-[250px] min-h-[48px] flex items-center justify-center">
@@ -179,6 +195,13 @@ const QueryInput = ({ onSubmit, onTranscribeAudio, isLoading, placeholderText = 
           )}
         </button>
       </form>
+
+      {/* Only render assistant reply as markdown if present */}
+      {assistantReply && (
+        <div className="w-full max-w-xl mt-4 prose lg:prose-xl">
+          <ReactMarkdown>{assistantReply}</ReactMarkdown>
+        </div>
+      )}
     </div>
   );
 };

@@ -5,6 +5,7 @@ const FileUploader = ({ onUpload, isLoading, uploadedFiles }) => {
   const [dragActive, setDragActive] = useState(false);
   // Store only one file for pdf and txt
   const [files, setFiles] = useState({ pdf: null, txt: null });
+  const [isInitializing, setIsInitializing] = useState(false);
   const fileInputRef = useRef(null);
 
   const handleDrag = (e) => {
@@ -68,7 +69,9 @@ const FileUploader = ({ onUpload, isLoading, uploadedFiles }) => {
       alert('Please select at least one file to upload.');
       return;
     }
+    setIsInitializing(true);
     const result = await onUpload(files.pdf, files.txt);
+    setIsInitializing(false);
     if (result.success) {
       // Files uploaded successfully
     } else {
@@ -173,13 +176,21 @@ const FileUploader = ({ onUpload, isLoading, uploadedFiles }) => {
         <div className="bg-green-50 border border-green-200 rounded-lg p-4">
           <div className="flex items-center space-x-2">
             <CheckCircle className="w-5 h-5 text-green-600" />
-            <span className="font-medium text-green-800">AI System Initialized Successfully!</span>
+            <span className="font-medium text-green-800">AI RAG System Initialized Successfully!</span>
           </div>
           <p className="text-sm text-green-600 mt-1">
             You can now proceed to the Chat tab to start asking questions.
           </p>
         </div>
       ) : null}
+
+      {/* Loading icon during AI initialization */}
+      {isInitializing && (
+        <div className="flex items-center justify-center mt-4 text-blue-600 text-lg font-semibold">
+          <Loader2 className="w-6 h-6 animate-spin mr-2" />
+          <span>AI RAG System Initializing, please wait...</span>
+        </div>
+      )}
     </div>
   );
 };
