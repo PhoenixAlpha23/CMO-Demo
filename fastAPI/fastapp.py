@@ -454,18 +454,23 @@ async def websocket_transcribe(websocket: WebSocket):
     groq_client = get_groq_client()
     try:
         while True:
-            data = await websocket.receive_bytes()
-            if data == b"":
-                break
-            audio_bytes.extend(data)
-            # Transcribe the current chunk and send as partial
-            try:
-                # You may want to only use the last N seconds for partial
-                success, partial_result = transcribe_audio(groq_client, bytes(audio_bytes))
-                if success and partial_result:
-                    await websocket.send_text(json.dumps({"partial": partial_result}))
-            except Exception as e:
-                await websocket.send_text(json.dumps({"error": f"Partial transcription failed: {str(e)}"}))
+            message = await websocket.receive()
+            if "bytes" in message:
+                chunk = message["bytes"]
+                if not chunk:
+                    continue
+                audio_bytes.extend(chunk)
+                # Transcribe only the latest chunk for partial
+                try:
+                    success, partial_result = transcribe_audio(groq_client, chunk)
+                    if success and partial_result:
+                        await websocket.send_text(json.dumps({"partial": partial_result}))
+                except Exception as e:
+                    await websocket.send_text(json.dumps({"error": f"Partial transcription failed: {str(e)}"}))
+            elif "text" in message:
+                # Handle end event
+                if message["text"] == '{"event":"end"}' or message["text"] == '{"event": "end"}':
+                    break
     except WebSocketDisconnect:
         pass
     except Exception as e:

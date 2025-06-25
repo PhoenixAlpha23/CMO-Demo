@@ -13,9 +13,14 @@ const QueryInput = ({
   const [inputText, setInputText] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
-  const [ws, setWs] = useState(null); // WebSocket instance
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
+  const transcriptionTimeout = useRef(null);
+  const silenceTimeoutRef = useRef(null);
+  const audioContextRef = useRef(null);
+  const analyserRef = useRef(null);
+  const sourceRef = useRef(null);
+  const wsRef = useRef(null); // <-- Add this line
 
   // WebSocket URL (update to your backend endpoint)
   const WS_URL = 'ws://localhost:8000/ws/transcribe';
@@ -30,23 +35,59 @@ const QueryInput = ({
 
   const startRecording = async () => {
     try {
+      setIsTranscribing(true);
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
 
+      // --- Silence detection setup ---
+      audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      analyserRef.current = audioContextRef.current.createAnalyser();
+      sourceRef.current = audioContextRef.current.createMediaStreamSource(stream);
+      sourceRef.current.connect(analyserRef.current);
+
+      const detectSilence = () => {
+        const bufferLength = analyserRef.current.fftSize;
+        const dataArray = new Uint8Array(bufferLength);
+        analyserRef.current.getByteTimeDomainData(dataArray);
+        // Calculate average volume
+        let sum = 0;
+        for (let i = 0; i < bufferLength; i++) {
+          sum += Math.abs(dataArray[i] - 128);
+        }
+        const avg = sum / bufferLength;
+        // If avg is below threshold, consider it silence
+        if (avg < 5) {
+          if (!silenceTimeoutRef.current) {
+            silenceTimeoutRef.current = setTimeout(() => {
+              stopRecording();
+            }, 2000);
+          }
+        } else {
+          if (silenceTimeoutRef.current) {
+            clearTimeout(silenceTimeoutRef.current);
+            silenceTimeoutRef.current = null;
+          }
+        }
+        if (isRecording) {
+          requestAnimationFrame(detectSilence);
+        }
+      };
+
+      requestAnimationFrame(detectSilence);
+      // --- End silence detection setup ---
+
       // Open WebSocket connection
       const socket = new window.WebSocket(WS_URL);
-      setWs(socket);
-      setIsTranscribing(true);
+      wsRef.current = socket;
 
       socket.onopen = () => {
-        mediaRecorder.start(250); // send data every 250ms
         setIsRecording(true);
+        mediaRecorder.start(250); // send data every 250ms
       };
 
       socket.onmessage = (event) => {
-        // Expecting JSON: { partial: string, final: string }
         try {
           const data = JSON.parse(event.data);
           if (data.partial) {
@@ -59,19 +100,25 @@ const QueryInput = ({
             mediaRecorder.stop();
             stream.getTracks().forEach(track => track.stop());
             socket.close();
+            // Clean up audio context
+            if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+              audioContextRef.current.close();
+            }
           }
-        } catch (err) {
-          // Ignore parse errors
-        }
+        } catch (err) {}
       };
 
-      socket.onerror = () => {
+      socket.onerror = (event) => {
+        console.error('WebSocket error:', event);
         alert('WebSocket error during transcription');
         setIsTranscribing(false);
         setIsRecording(false);
         mediaRecorder.stop();
         stream.getTracks().forEach(track => track.stop());
         socket.close();
+        if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+          audioContextRef.current.close();
+        }
       };
 
       mediaRecorder.ondataavailable = (event) => {
@@ -84,21 +131,59 @@ const QueryInput = ({
         if (socket.readyState === 1) {
           socket.send(JSON.stringify({ event: 'end' }));
         }
+        // Clean up audio context
+        if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+          audioContextRef.current.close();
+        }
+        if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
       };
+
+      transcriptionTimeout.current = setTimeout(() => {
+        if (mediaRecorder.state !== 'inactive') {
+          mediaRecorder.stop();
+        }
+        setIsTranscribing(false);
+        setIsRecording(false);
+        socket.close();
+        stream.getTracks().forEach(track => track.stop());
+        if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+          audioContextRef.current.close();
+        }
+      }, 20000); // 20 seconds max
     } catch (error) {
       alert('Microphone access denied or not available');
+      setIsTranscribing(false);
+      setIsRecording(false);
     }
   };
 
   const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
+    if (transcriptionTimeout.current) clearTimeout(transcriptionTimeout.current);
+    if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
+
+    // Stop mediaRecorder if active
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
-      setIsRecording(false);
-      if (ws && ws.readyState === 1) {
-        ws.send(JSON.stringify({ event: 'end' }));
-        ws.close();
-      }
     }
+
+    // Stop WebSocket if open
+    if (wsRef.current && wsRef.current.readyState === 1) {
+      wsRef.current.send(JSON.stringify({ event: 'end' }));
+      wsRef.current.close();
+    }
+
+    // Stop audio context
+    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+      audioContextRef.current.close();
+    }
+
+    // Stop all audio tracks if any
+    if (mediaRecorderRef.current && mediaRecorderRef.current.stream) {
+      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+    }
+
+    setIsRecording(false);
+    setIsTranscribing(false);
   };
 
   // Allow mic button to always stop recording/transcription
@@ -136,10 +221,10 @@ const QueryInput = ({
       <div className="mb-2">
         <div className="rounded-xl shadow-lg px-6 py-3 bg-white text-gray-800 text-xl text-center min-w-[250px] min-h-[48px] flex items-center justify-center">
           {isTranscribing
-            ? inputText || 'Transcribing...'
+            ? (inputText ? inputText : 'Transcribing...')
             : isRecording
-            ? inputText || 'Listening...'
-            : inputText || 'Type or use the mic to ask'}
+            ? (inputText ? inputText : 'Listening...')
+            : (inputText || 'Type or use the mic to ask')}
         </div>
       </div>
 
@@ -147,6 +232,7 @@ const QueryInput = ({
       <button
         type="button"
         onClick={handleMicClick}
+        disabled={isTranscribing}
         className={`w-16 h-16 flex items-center justify-center rounded-full shadow-lg transition-all border-4 focus:outline-none
           ${isTranscribing ? 'bg-blue-500 border-blue-700 animate-pulse' : isRecording ? 'bg-red-500 border-red-700 animate-pulse' : 'bg-blue-100 border-blue-300'}
           hover:scale-105 active:scale-95

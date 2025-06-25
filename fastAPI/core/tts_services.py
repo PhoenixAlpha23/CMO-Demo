@@ -89,7 +89,24 @@ def text_to_speech(text, lang=None, auto_detect=True, speed=1.0):
         print(f"TTS Error: {e}")
         return None, lang or 'en', f'error: {str(e)}'
 
-def generate_audio_response(text, lang_preference=None, speed=1.0):
+def get_voice_params(lang):
+    if lang == "mr":
+        return {
+            "language_code": "mr-IN", 
+            "name": "mr-IN-Wavenet-A"  # Indian Marathi (Maharashtra) voice
+        }
+    elif lang == "hi":
+        return {
+            "language_code": "hi-IN", 
+            "name": "hi-IN-Wavenet-A"
+        }
+    else:
+        return {
+            "language_code": "en-US", 
+            "name": "en-US-Wavenet-D"
+        }
+
+def generate_audio_response(text, lang_preference="auto", speed=1.0):
     """
     Generate audio response for given text.
     Returns: (audio_data, detected_lang, cache_hit) tuple
@@ -116,6 +133,9 @@ def generate_audio_response(text, lang_preference=None, speed=1.0):
         )
 
         cache_hit = cache_status == 'cached'
+        
+        voice_params = get_voice_params(final_lang)
+        # Use voice_params in your TTS API call
         
         # If lang_preference was 'auto', final_lang is the detected one.
         # If a specific lang was preferred, final_lang is that preferred one (or fallback if error).

@@ -14,6 +14,7 @@ function App() {
   const [chatHistory, setChatHistory] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [currentAnswer, setCurrentAnswer] = useState('');
+  const [currentQuestion, setCurrentQuestion] = useState(''); // <-- Add state for current question
   const [uploadedFiles, setUploadedFiles] = useState({ pdf: null, txt: null });
   const [activeTab, setActiveTab] = useState('upload');
   const [langWarning, setLangWarning] = useState('');
@@ -91,6 +92,7 @@ function App() {
     try {
       const result = await apiClient.query(inputText);
       setCurrentAnswer(result.reply);
+      setCurrentQuestion(inputText); // <-- Set the current question
       
       const newEntry = {
         user: inputText,
@@ -267,6 +269,7 @@ function App() {
               {currentAnswer && (
                 <AnswerSection
                   answer={currentAnswer}
+                  question={currentQuestion} // <-- Make sure this is set!
                   onGenerateTTS={handleGenerateTTS}
                 />
               )}
