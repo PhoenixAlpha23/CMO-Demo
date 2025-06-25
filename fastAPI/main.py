@@ -63,7 +63,7 @@ class APIClient:
             return False, {"error": str(e)}
     
     def query(self, input_text: str, model: str = "llama-3.3-70b-versatile", 
-              enhanced_mode: bool = True, voice_lang_pref: str = "auto") -> Tuple[bool, dict]:
+              enhanced_mode: bool = True, voice_lang_pref: str = "auto", model_key: str = None) -> Tuple[bool, dict]:
         """Send query to RAG system"""
         try:
             payload = {
@@ -71,7 +71,8 @@ class APIClient:
                 "model": model,
                 "enhanced_mode": enhanced_mode,
                 "voice_lang_pref": voice_lang_pref,
-                "session_id": self.session_id
+                "session_id": self.session_id,
+                "model_key": model_key  
             }
             
             response = self.session.post(
@@ -259,6 +260,7 @@ def main():
                 if success:
                     st.session_state.rag_initialized = True
                     st.session_state.current_files_hash = current_files_hash
+                    st.session_state.model_key = result.get("model_key")  # <-- ADD THIS LINE
                     
                     msg = st.empty()
                     msg.success("✅ RAG Agent ready!")

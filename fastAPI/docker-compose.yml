@@ -23,18 +23,3 @@ services:
     volumes:
       - .:/app
     restart: unless-stopped
-
-  streamlit:
-    build:
-      context: .
-      dockerfile: Dockerfile.streamlit
-    container_name: streamlit-ui
-    ports:
-      - "8501:8501"
-    environment:
-      - API_BASE_URL=http://fastapi:8000
-    depends_on:
-      - fastapi
-    volumes:
-      - .:/app
-    restart: unless-stopped
