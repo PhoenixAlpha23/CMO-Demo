@@ -23,3 +23,11 @@ __pycache__/
 .mypy_cache/
 resources/
 test_redis.py
+assets/
+resources/
+.streamlit/
+# Ignore Docker-related files
+Dockerfile
+docker-compose.yml
+Dockerfile.fastapi
+Dockerfile.streamlit
