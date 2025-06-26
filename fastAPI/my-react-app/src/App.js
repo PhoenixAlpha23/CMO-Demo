@@ -178,36 +178,38 @@ function App() {
           {/* Header Content */}
           <div className="flex items-center justify-between h-32">
             {/* Header Buttons - Left Side */}
-            <div className="flex items-center space-x-4">
-              <button
-                onClick={() => setActiveTab('chat')}
-                disabled={!ragInitialized}
-                className={`p-3 rounded-full transition-all ${
-                  activeTab === 'chat' && ragInitialized
-                    ? 'bg-blue-600 text-white shadow-lg'
-                    : ragInitialized
-                    ? 'text-gray-600 hover:text-blue-600 hover:bg-white/50'
-                    : 'text-gray-400 cursor-not-allowed'
-                }`}
-                title="Chat"
-              >
-                <MessageCircle className="w-6 h-6" />
-              </button>
-              <button
-                onClick={() => setActiveTab('history')}
-                disabled={!ragInitialized}
-                className={`p-3 rounded-full transition-all ${
-                  activeTab === 'history' && ragInitialized
-                    ? 'bg-blue-600 text-white shadow-lg'
-                    : ragInitialized
-                    ? 'text-gray-600 hover:text-blue-600 hover:bg-white/50'
-                    : 'text-gray-400 cursor-not-allowed'
-                }`}
-                title="History"
-              >
-                <History className="w-6 h-6" />
-              </button>
-            </div>
+            {(ragInitialized && (activeTab === 'chat' || activeTab === 'history')) && (
+              <div className="flex items-center space-x-4">
+                <button
+                  onClick={() => setActiveTab('chat')}
+                  disabled={!ragInitialized}
+                  className={`p-3 rounded-full transition-all ${
+                    activeTab === 'chat' && ragInitialized
+                      ? 'bg-blue-600 text-white shadow-lg'
+                      : ragInitialized
+                      ? 'text-gray-600 hover:text-blue-600 hover:bg-white/50'
+                      : 'text-gray-400 cursor-not-allowed'
+                  }`}
+                  title="Chat"
+                >
+                  <MessageCircle className="w-6 h-6" />
+                </button>
+                <button
+                  onClick={() => setActiveTab('history')}
+                  disabled={!ragInitialized}
+                  className={`p-3 rounded-full transition-all ${
+                    activeTab === 'history' && ragInitialized
+                      ? 'bg-blue-600 text-white shadow-lg'
+                      : ragInitialized
+                      ? 'text-gray-600 hover:text-blue-600 hover:bg-white/50'
+                      : 'text-gray-400 cursor-not-allowed'
+                  }`}
+                  title="History"
+                >
+                  <History className="w-6 h-6" />
+                </button>
+              </div>
+            )}
             
             {/* Logo and Title - Center */}
             <div className="flex items-center space-x-4 absolute left-1/2 transform -translate-x-1/2">
