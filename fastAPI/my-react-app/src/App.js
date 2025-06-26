@@ -290,6 +290,7 @@ function App() {
                   question={currentQuestion}
                   onGenerateTTS={handleGenerateTTS}
                   audioUrl={audioUrl}
+                  autoPlay={true}
                 />
               )}
             </div>

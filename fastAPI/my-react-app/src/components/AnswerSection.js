@@ -44,11 +44,11 @@ function AudioPlayerSection({ langUsedForTTS, cacheHit, audioUrl, autoPlay, clea
   return null;
 }
 
-const AnswerSection = ({ answer, question, onGenerateTTS }) => {
+const AnswerSection = ({ answer, question, onGenerateTTS, audioUrl, autoPlay }) => {
   const [isPlayingTTS, setIsPlayingTTS] = useState(false);
   const [isGeneratingTTS, setIsGeneratingTTS] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
-  const [audioUrl, setAudioUrl] = useState(null);
+  const [audioUrlState, setAudioUrl] = useState(null);
   const [audioProgress, setAudioProgress] = useState(0);
   const [audioDuration, setAudioDuration] = useState(0);
   const audioRef = useRef(null);
@@ -69,13 +69,18 @@ const AnswerSection = ({ answer, question, onGenerateTTS }) => {
 
   // When audioUrl changes, create a new Audio object
   useEffect(() => {
-    if (!audioUrl) return;
+    if (!audioUrlState) return;
+    // Pause any global audio before starting new one
+    if (window.currentlyPlayingAudio && typeof window.currentlyPlayingAudio.pause === 'function') {
+      window.currentlyPlayingAudio.pause();
+    }
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current = null;
     }
-    const audio = new Audio(audioUrl);
+    const audio = new Audio(audioUrlState);
     audioRef.current = audio;
+    window.currentlyPlayingAudio = audio;
 
     audio.addEventListener('timeupdate', () => {
       setAudioProgress(audio.currentTime);
@@ -87,11 +92,22 @@ const AnswerSection = ({ answer, question, onGenerateTTS }) => {
 
     // Try to autoplay as soon as the audio is ready
     const tryPlay = () => {
-      audio.load(); // Ensure audio is loaded
+      audio.load();
       const playPromise = audio.play();
       if (playPromise !== undefined) {
         playPromise.catch(() => {
-          // Optionally handle autoplay block here
+          // Show a UI hint to the user and retry on interaction
+          if (!window.__audio_autoplay_hint_shown) {
+            alert('🔊 Please click anywhere on the page to enable audio playback (browser autoplay policy).');
+            window.__audio_autoplay_hint_shown = true;
+          }
+          const onUserInteract = () => {
+            audio.play();
+            window.removeEventListener('click', onUserInteract);
+            window.removeEventListener('keydown', onUserInteract);
+          };
+          window.addEventListener('click', onUserInteract);
+          window.addEventListener('keydown', onUserInteract);
         });
       }
     };
@@ -104,8 +120,11 @@ const AnswerSection = ({ answer, question, onGenerateTTS }) => {
     return () => {
       audio.pause();
       audioRef.current = null;
+      if (window.currentlyPlayingAudio === audio) {
+        window.currentlyPlayingAudio = null;
+      }
     };
-  }, [audioUrl]);
+  }, [audioUrlState]);
 
   // Play/Pause handler
   const handlePlayPause = () => {
@@ -160,14 +179,22 @@ const AnswerSection = ({ answer, question, onGenerateTTS }) => {
       audioRef.current.pause();
       audioRef.current = null;
     }
-    if (audioUrl) {
-      URL.revokeObjectURL(audioUrl);
+    if (audioUrlState) {
+      URL.revokeObjectURL(audioUrlState);
       setAudioUrl(null);
     }
     setAudioProgress(0);
     setAudioDuration(0);
     setIsPlayingTTS(false);
   }, [answer]);
+
+  // Auto-generate and play TTS when answer changes and autoPlay is true
+  useEffect(() => {
+    if (autoPlay && answer && !audioUrlState && !isGeneratingTTS) {
+      handleGenerateTTS();
+    }
+    // eslint-disable-next-line
+  }, [answer, autoPlay]);
 
   if (!answer) return null;
 
@@ -214,7 +241,7 @@ const AnswerSection = ({ answer, question, onGenerateTTS }) => {
           <div className="flex flex-col space-y-1 mt-2">
             <div className="flex items-center space-x-2">
               <button
-                onClick={audioUrl ? handlePlayPause : handleGenerateTTS}
+                onClick={audioUrlState ? handlePlayPause : handleGenerateTTS}
                 disabled={isGeneratingTTS}
                 className="p-2 rounded-lg bg-green-100 text-green-600 hover:bg-green-200 transition-colors disabled:opacity-50"
                 title={isPlayingTTS ? 'Pause Audio' : 'Play Audio'}
@@ -235,7 +262,7 @@ const AnswerSection = ({ answer, question, onGenerateTTS }) => {
                     audio.play();
                   }
                 }}
-                disabled={!audioUrl}
+                disabled={!audioUrlState}
                 className="p-2 rounded-lg bg-purple-100 text-purple-600 hover:bg-purple-200 transition-colors disabled:opacity-50"
                 title="Replay Audio"
               >
@@ -254,7 +281,7 @@ const AnswerSection = ({ answer, question, onGenerateTTS }) => {
               </button>
             </div>
             {/* Audio Player Bar */}
-            {audioUrl && (
+            {audioUrlState && (
               <>
                 <div className="flex items-center space-x-2 w-full">
                   <span className="text-xs text-gray-500 w-10 text-right">
@@ -276,7 +303,7 @@ const AnswerSection = ({ answer, question, onGenerateTTS }) => {
                 {/* Download Audio Button */}
                 <div className="flex justify-end mt-1">
                   <a
-                    href={audioUrl}
+                    href={audioUrlState}
                     download="answer-audio.mp3"
                     className="inline-flex items-center px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 text-xs font-medium transition-colors"
                     title="Download Audio as MP3"
