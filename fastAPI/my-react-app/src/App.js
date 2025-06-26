@@ -174,68 +174,61 @@ function App() {
           <div className="absolute right-8 top-8">
             <StatusBar isApiAvailable={isApiAvailable} ragInitialized={ragInitialized} />
           </div>
-          <div className="flex flex-col items-center justify-center h-32">
-            <div className="flex items-center space-x-4 justify-center">
+          
+          {/* Header Content */}
+          <div className="flex items-center justify-between h-32">
+            {/* Header Buttons - Left Side */}
+            <div className="flex items-center space-x-4">
+              <button
+                onClick={() => setActiveTab('chat')}
+                disabled={!ragInitialized}
+                className={`p-3 rounded-full transition-all ${
+                  activeTab === 'chat' && ragInitialized
+                    ? 'bg-blue-600 text-white shadow-lg'
+                    : ragInitialized
+                    ? 'text-gray-600 hover:text-blue-600 hover:bg-white/50'
+                    : 'text-gray-400 cursor-not-allowed'
+                }`}
+                title="Chat"
+              >
+                <MessageCircle className="w-6 h-6" />
+              </button>
+              <button
+                onClick={() => setActiveTab('history')}
+                disabled={!ragInitialized}
+                className={`p-3 rounded-full transition-all ${
+                  activeTab === 'history' && ragInitialized
+                    ? 'bg-blue-600 text-white shadow-lg'
+                    : ragInitialized
+                    ? 'text-gray-600 hover:text-blue-600 hover:bg-white/50'
+                    : 'text-gray-400 cursor-not-allowed'
+                }`}
+                title="History"
+              >
+                <History className="w-6 h-6" />
+              </button>
+            </div>
+            
+            {/* Logo and Title - Center */}
+            <div className="flex items-center space-x-4 absolute left-1/2 transform -translate-x-1/2">
               <img
                 src="/cmrf-logo-removebg-preview.png"
                 alt="CMRF Logo"
                 className="w-24 h-24 rounded-full object-cover"
               />
-              <h1 className="text-5xl font-extrabold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent text-center">
+              <h1 className="text-5xl font-extrabold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
                 CMRF AI Agent
               </h1>
             </div>
+            
+            {/* Empty div for balance */}
+            <div className="w-32"></div>
           </div>
         </div>
       </header>
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Navigation Tabs */}
-        <div className="mb-8">
-          <div className="flex space-x-1 bg-white/50 backdrop-blur-sm rounded-lg p-1">
-            <button
-              onClick={() => setActiveTab('upload')}
-              className={`flex items-center space-x-2 px-4 py-2 rounded-md font-medium transition-all ${
-                activeTab === 'upload'
-                  ? 'bg-blue-600 text-white shadow-lg'
-                  : 'text-gray-600 hover:text-blue-600 hover:bg-white/50'
-              }`}
-            >
-              <Upload className="w-4 h-4" />
-              <span>Upload Files</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('chat')}
-              disabled={!ragInitialized}
-              className={`flex items-center space-x-2 px-4 py-2 rounded-md font-medium transition-all ${
-                activeTab === 'chat' && ragInitialized
-                  ? 'bg-blue-600 text-white shadow-lg'
-                  : ragInitialized
-                  ? 'text-gray-600 hover:text-blue-600 hover:bg-white/50'
-                  : 'text-gray-400 cursor-not-allowed'
-              }`}
-            >
-              <MessageCircle className="w-4 h-4" />
-              <span>Chat</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('history')}
-              disabled={!ragInitialized}
-              className={`flex items-center space-x-2 px-4 py-2 rounded-md font-medium transition-all ${
-                activeTab === 'history' && ragInitialized
-                  ? 'bg-blue-600 text-white shadow-lg'
-                  : ragInitialized
-                  ? 'text-gray-600 hover:text-blue-600 hover:bg-white/50'
-                  : 'text-gray-400 cursor-not-allowed'
-              }`}
-            >
-              <History className="w-4 h-4" />
-              <span>History</span>
-            </button>
-          </div>
-        </div>
-
         {/* Tab Content */}
         <div className="space-y-8">
           {activeTab === 'upload' && (
