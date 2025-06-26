@@ -1,0 +1,211 @@
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.5s ease-out;
+}
+
+/* Markdown content styles */
+.markdown-content {
+  line-height: 1.6;
+  font-family: 'Noto Sans', 'Noto Sans Devanagari', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+}
+
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3,
+.markdown-content h4 {
+  margin-top: 2rem;
+  margin-bottom: 1rem;
+  font-weight: 700;
+  color: #1f2937;
+  font-family: 'Noto Sans', 'Noto Sans Devanagari', sans-serif;
+  line-height: 1.3;
+  border-bottom: 2px solid #e5e7eb;
+  padding-bottom: 0.5rem;
+}
+
+.markdown-content h1 {
+  font-size: 1.5rem;
+  margin-top: 2.5rem;
+}
+
+.markdown-content h2 {
+  font-size: 1.25rem;
+  margin-top: 2rem;
+}
+
+.markdown-content h3 {
+  font-size: 1.125rem;
+  margin-top: 1.75rem;
+}
+
+.markdown-content h4 {
+  font-size: 1rem;
+  margin-top: 1.5rem;
+}
+
+.markdown-content p {
+  margin-bottom: 1.5rem;
+  line-height: 1.7;
+  font-family: 'Noto Sans', 'Noto Sans Devanagari', sans-serif;
+  text-align: justify;
+}
+
+.markdown-content ul,
+.markdown-content ol {
+  margin-bottom: 1.5rem;
+  padding-left: 1.5rem;
+  font-family: 'Noto Sans', 'Noto Sans Devanagari', sans-serif;
+}
+
+.markdown-content li {
+  margin-bottom: 0.75rem;
+  line-height: 1.6;
+  font-family: 'Noto Sans', 'Noto Sans Devanagari', sans-serif;
+}
+
+.markdown-content ul li {
+  list-style-type: disc;
+}
+
+.markdown-content ol li {
+  list-style-type: decimal;
+}
+
+.markdown-content strong {
+  font-weight: 700;
+  color: #1f2937;
+  font-family: 'Noto Sans', 'Noto Sans Devanagari', sans-serif;
+}
+
+.markdown-content em {
+  font-style: italic;
+  font-family: 'Noto Sans', 'Noto Sans Devanagari', sans-serif;
+}
+
+.markdown-content blockquote {
+  border-left: 4px solid #3b82f6;
+  padding-left: 1rem;
+  margin: 1.5rem 0;
+  font-style: italic;
+  color: #6b7280;
+  font-family: 'Noto Sans', 'Noto Sans Devanagari', sans-serif;
+}
+
+.markdown-content code {
+  background-color: #f3f4f6;
+  padding: 0.125rem 0.25rem;
+  border-radius: 0.25rem;
+  font-family: 'Courier New', monospace;
+  font-size: 0.875rem;
+}
+
+.markdown-content pre {
+  background-color: #f3f4f6;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  overflow-x: auto;
+  margin: 1.5rem 0;
+}
+
+.markdown-content pre code {
+  background-color: transparent;
+  padding: 0;
+}
+
+/* Ensure proper spacing for first elements */
+.markdown-content > *:first-child {
+  margin-top: 0;
+}
+
+.markdown-content > *:last-child {
+  margin-bottom: 0;
+}
+
+/* Add extra spacing between sections */
+.markdown-content > * + * {
+  margin-top: 1rem;
+}
+
+/* Ensure chat history bubbles have proper markdown formatting */
+.bg-green-50 .markdown-content {
+  font-family: 'Noto Sans', 'Noto Sans Devanagari', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+}
+
+.bg-green-50 .markdown-content h1,
+.bg-green-50 .markdown-content h2,
+.bg-green-50 .markdown-content h3,
+.bg-green-50 .markdown-content h4 {
+  margin-top: 2rem;
+  margin-bottom: 1rem;
+  font-weight: 700;
+  color: #1f2937;
+  font-family: 'Noto Sans', 'Noto Sans Devanagari', sans-serif;
+  line-height: 1.3;
+  border-bottom: 2px solid #e5e7eb;
+  padding-bottom: 0.5rem;
+}
+
+.bg-green-50 .markdown-content h1 {
+  font-size: 1.5rem;
+  margin-top: 2.5rem;
+}
+
+.bg-green-50 .markdown-content h2 {
+  font-size: 1.25rem;
+  margin-top: 2rem;
+}
+
+.bg-green-50 .markdown-content h3 {
+  font-size: 1.125rem;
+  margin-top: 1.75rem;
+}
+
+.bg-green-50 .markdown-content h4 {
+  font-size: 1rem;
+  margin-top: 1.5rem;
+}
+
+.bg-green-50 .markdown-content p {
+  margin-bottom: 1.5rem;
+  line-height: 1.7;
+  font-family: 'Noto Sans', 'Noto Sans Devanagari', sans-serif;
+  text-align: justify;
+}
+
+.bg-green-50 .markdown-content ul,
+.bg-green-50 .markdown-content ol {
+  margin-bottom: 1.5rem;
+  padding-left: 1.5rem;
+  font-family: 'Noto Sans', 'Noto Sans Devanagari', sans-serif;
+}
+
+.bg-green-50 .markdown-content li {
+  margin-bottom: 0.75rem;
+  line-height: 1.6;
+  font-family: 'Noto Sans', 'Noto Sans Devanagari', sans-serif;
+}
+
+.bg-green-50 .markdown-content strong {
+  font-weight: 700;
+  color: #1f2937;
+  font-family: 'Noto Sans', 'Noto Sans Devanagari', sans-serif;
+}
+
+.bg-green-50 .markdown-content em {
+  font-style: italic;
+  font-family: 'Noto Sans', 'Noto Sans Devanagari', sans-serif;
+} 

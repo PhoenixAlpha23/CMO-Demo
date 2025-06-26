@@ -125,6 +125,8 @@ def generate_audio_response(text, lang_preference="auto", speed=1.0):
 
         target_lang = lang_preference if lang_preference and lang_preference != 'auto' else None
         
+        text = separate_digits(text)
+
         audio_bytes, final_lang, cache_status = text_to_speech(
             clean_text,
             lang=target_lang, # Pass specific lang if chosen, else None for auto-detect
@@ -144,3 +146,7 @@ def generate_audio_response(text, lang_preference="auto", speed=1.0):
     except Exception as e:
         print(f"Error generating audio in generate_audio_response: {str(e)}")
         return None, (lang_preference if lang_preference != 'auto' else 'en'), False
+
+def separate_digits(text):
+    # Replace sequences of digits with space-separated digits
+    return re.sub(r'\d+', lambda m: ' '.join(m.group(0)), text)

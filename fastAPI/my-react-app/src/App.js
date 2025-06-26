@@ -24,6 +24,13 @@ function App() {
     checkApiAvailability();
   }, []);
 
+  useEffect(() => {
+    if (activeTab !== 'chat') {
+      window.dispatchEvent(new Event('stopAllAudioPlayback'));
+      window.isAnyAudioPlaying = false;
+    }
+  }, [activeTab]);
+
   const checkApiAvailability = async () => {
     try {
       const available = await apiClient.healthCheck();
@@ -162,7 +169,7 @@ function App() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
       {/* Header */}
-      <header className="bg-white/80 backdrop-blur-md border-b border-white/20 sticky top-0 z-50 relative">
+      <header className="bg-white/80 backdrop-blur-md border-b border-white/20 relative">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative">
           <div className="absolute right-8 top-8">
             <StatusBar isApiAvailable={isApiAvailable} ragInitialized={ragInitialized} />
@@ -172,9 +179,9 @@ function App() {
               <img
                 src="/cmrf-logo-removebg-preview.png"
                 alt="CMRF Logo"
-                className="w-24 h-24 rounded-full object-cover shadow"
+                className="w-24 h-24 rounded-full object-cover"
               />
-              <h1 className="text-6xl font-extrabold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent text-center">
+              <h1 className="text-5xl font-extrabold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent text-center">
                 CMRF AI Agent
               </h1>
             </div>
