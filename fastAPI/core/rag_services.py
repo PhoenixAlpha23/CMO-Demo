@@ -126,7 +126,28 @@ Ensure your response follows these styles and tone:
 * Use direct, everyday language.
 * Maintain a personal and friendly tone, aligned with the user's language.
 * Provide detailed responses, with **toll-free numbers** and **visible (non-hyperlinked) website URLs** *only if those URLs are present in the knowledge base*.
-* Use section headers like "Description", "Eligibility", or for Marathi: "उद्देशः", "अंतर्भूत घटकः".
+* **Use proper markdown formatting for better readability:**
+  - Start each section with a **bold header** on a new line with proper spacing
+  - Format headers as: **Header Name** (on its own line)
+  - For Marathi: use **"परिचय"**, **"उद्देशः"**, **"अंतर्भूत घटकः"**, **"लाभः"**, **"नोंदणी प्रक्रिया"**, **"संपर्क माहिती"**, **"निष्कर्ष"**, etc.
+  - For Hindi: use **"परिचय"**, **"विवरण"**, **"पात्रता"**, **"लाभ"**, **"आवेदन प्रक्रिया"**, **"संपर्क जानकारी"**, **"निष्कर्ष"**, etc.
+  - For English: use **"Introduction"**, **"Description"**, **"Eligibility"**, **"Benefits"**, **"Application Process"**, **"Contact Information"**, **"Conclusion"**, etc.
+  - Use bullet points (•) for lists with proper spacing
+  - Use **bold text** for important information like numbers, deadlines, etc.
+  - Ensure proper line breaks between sections (double line breaks)
+  - Format your response with clear structure and spacing
+  - Each header should be on its own line with content below it
+  - Example format:
+    **Introduction**
+    [Content here]
+
+    **Description** 
+    [Content here]
+
+    **Benefits**
+    • [Benefit 1]
+    • [Benefit 2]
+    • [Benefit 3]
 * If there is no relevant context for the question, simply say:  
   - **In Marathi**: "क्षमस्व, मी या विषयावर तुमची मदत करू शकत नाही. अधिक माहितीसाठी, कृपया १०४/१०२ हेल्पलाइन क्रमांकावर संपर्क साधा."  
   - **In Hindi**: "माफ़ कीजिए, मैं इस विषय पर आपकी मदद नहीं कर सकती। अधिक जानकारी के लिए कृपया 104/102 हेल्पलाइन नंबर पर संपर्क करें।"  
@@ -134,6 +155,7 @@ Ensure your response follows these styles and tone:
 * **Remove duplicate information and provide only one consolidated answer.**
 * Do not provide answers based on assumptions or general knowledge. Use only the information provided in the knowledge base.
 * If there is no relevant context for the question, simply direct the user to contact 104/102 helpline numbers. DO NOT ANSWER IRRELEVANT QUESTIONS, ONLY APOLOGIZE THAT YOU CAN'T ANSWER THIS QUESTION AND DIRECT TOWARD 104/102 HELPLINE.
+* Do NOT start your answer with phrases like "Here is the answer to the user's query:" or similar. Just answer directly.
 
 Your goal is to help a citizen understand schemes and their eligibility criteria clearly, using only the verified data provided in the documents. 
 
@@ -181,33 +203,6 @@ def build_rag_chain_with_model_choice(pdf_file, txt_file, groq_api_key, model_ch
     """
     return build_rag_chain_from_files(pdf_file, txt_file, groq_api_key, enhanced_mode, model_choice)
 
-def detect_language(text):
-    """
-    Auto-detect language from text
-    Returns language code (e.g., 'en', 'hi', 'mr')
-    """
-    if not TTS_AVAILABLE:
-        return 'en'
-    
-    try:
-        clean_text = re.sub(r'[^\w\s]', '', text)
-        if len(clean_text.strip()) < 10:
-            return 'en'
-        
-        detected = detect(clean_text)
-        
-        lang_mapping = {
-            'hi': 'hi',
-            'mr': 'mr',
-            'en': 'en'
-        }
-        
-        return lang_mapping.get(detected, 'en')
-        
-    except Exception as e:
-        print(f"Language detection failed: {e}")
-        return 'en'
-
 # --- Query Processing ---
 def process_scheme_query_with_retry(rag_chain, user_query, max_retries=3, enable_tts=False, autoplay=False):
     """
@@ -216,7 +211,7 @@ def process_scheme_query_with_retry(rag_chain, user_query, max_retries=3, enable
     """
     # Detect language and enforce allowed languages for text processing
     supported_languages = {"en", "hi", "mr"}
-    detected_lang = detect_language(user_query)
+    detected_lang, _ = detect_language(user_query)
     if detected_lang not in supported_languages:
         return (
             "⚠️ Sorry, only Marathi, Hindi, and English are supported. कृपया मराठी, हिंदी अथवा इंग्रजी भाषेत विचारा.",
