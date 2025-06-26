@@ -23,6 +23,10 @@ const ChatHistory = ({ chatHistory, onGenerateTTS }) => {
   const [currentAudio, setCurrentAudio] = useState(null);
   const [audioUrl, setAudioUrl] = useState(null);
   const [pausedAt, setPausedAt] = useState(0);
+  const [audioProgress, setAudioProgress] = useState({});
+  const [audioDuration, setAudioDuration] = useState({});
+  const audioRefs = useRef({});
+  const [audioUrls, setAudioUrls] = useState({});
   // Add autoPlayBlocked ref for each message
   const autoPlayBlocked = useRef({});
 
@@ -56,38 +60,72 @@ const ChatHistory = ({ chatHistory, onGenerateTTS }) => {
     XLSX.writeFile(wb, 'chat_history.xlsx');
   };
 
-  // Play or resume audio
-  const handleTTSPlay = async (text, index) => {
-    window.dispatchEvent(new Event('stopAllAudioPlayback'));
-    if (window.isAnyAudioPlaying) return; // Don't play if another audio is still flagged as playing
-    if (!generatingTTSIndex && playingIndex === index && currentAudio && currentAudio.paused && pausedAt > 0) {
-      if (autoPlayBlocked.current[index]) return;
-      currentAudio.currentTime = pausedAt;
-      await currentAudio.play();
-      setPausedAt(0);
-      // window.isAnyAudioPlaying will be set in onplay
-      return;
+  // When audioUrl changes for an index, create a new Audio object
+  useEffect(() => {
+    Object.entries(audioUrls).forEach(([idx, url]) => {
+      if (!url) return;
+      if (audioRefs.current[idx]) {
+        audioRefs.current[idx].pause();
+        audioRefs.current[idx] = null;
+      }
+      const audio = new Audio(url);
+      audioRefs.current[idx] = audio;
+      audio.addEventListener('timeupdate', () => {
+        setAudioProgress(prev => ({ ...prev, [idx]: audio.currentTime }));
+        setAudioDuration(prev => ({ ...prev, [idx]: audio.duration || 0 }));
+      });
+      audio.addEventListener('ended', () => setPlayingIndex(null));
+      audio.addEventListener('pause', () => setPlayingIndex(null));
+      audio.addEventListener('play', () => setPlayingIndex(idx));
+
+      // Try to autoplay as soon as the audio is ready
+      const tryPlay = () => {
+        audio.load(); // Ensure audio is loaded
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(() => {
+            // Optionally handle autoplay block here
+          });
+        }
+      };
+      if (audio.readyState >= 1) {
+        tryPlay();
+      } else {
+        audio.addEventListener('loadedmetadata', tryPlay, { once: true });
+      }
+    });
+    return () => {
+      Object.values(audioRefs.current).forEach(audio => {
+        if (audio) audio.pause();
+      });
+    };
+  }, [audioUrls]);
+
+  // Play/Pause handler
+  const handlePlayPause = (idx) => {
+    const audio = audioRefs.current[idx];
+    if (!audio) return;
+    if (audio.paused) {
+      audio.play();
+    } else {
+      audio.pause();
     }
-    if (playingIndex === index && currentAudio && !currentAudio.paused) {
-      currentAudio.pause();
-      setPausedAt(currentAudio.currentTime);
-      setPlayingIndex(null);
-      autoPlayBlocked.current[index] = true;
-      window.isAnyAudioPlaying = false;
-      return;
-    }
-    if (currentAudio) {
-      currentAudio.pause();
-      setPlayingIndex(null);
-      setCurrentAudio(null);
-      setPausedAt(0);
-      window.isAnyAudioPlaying = false;
-    }
-    if (audioUrl) {
-      URL.revokeObjectURL(audioUrl);
-      setAudioUrl(null);
-    }
-    setGeneratingTTSIndex(index);
+  };
+
+  // Seek handler
+  const handleSeek = (e, idx) => {
+    const audio = audioRefs.current[idx];
+    if (!audio || !audioDuration[idx]) return;
+    const rect = e.target.getBoundingClientRect();
+    const percent = (e.clientX - rect.left) / rect.width;
+    const seekTime = percent * audioDuration[idx];
+    audio.currentTime = seekTime;
+    setAudioProgress(prev => ({ ...prev, [idx]: seekTime }));
+    if (playingIndex === idx) audio.play();
+  };
+
+  // Generate TTS and set audioUrl for an index
+  const handleGenerateTTS = async (text, idx) => {
     try {
       const ttsResult = await onGenerateTTS(text);
       if (ttsResult && ttsResult.audio_base64) {
@@ -96,66 +134,13 @@ const ChatHistory = ({ chatHistory, onGenerateTTS }) => {
           { type: 'audio/wav' }
         );
         const url = URL.createObjectURL(audioBlob);
-        setAudioUrl(url);
-        const audio = new Audio(url);
-        audio.onplay = () => { setPlayingIndex(index); window.isAnyAudioPlaying = true; };
-        audio.onpause = () => { setPausedAt(audio.currentTime); window.isAnyAudioPlaying = false; };
-        audio.onended = () => {
-          setPlayingIndex(null);
-          setPausedAt(0);
-          window.isAnyAudioPlaying = false;
-          URL.revokeObjectURL(url);
-        };
-        audio.onerror = () => {
-          setPlayingIndex(null);
-          setPausedAt(0);
-          window.isAnyAudioPlaying = false;
-          URL.revokeObjectURL(url);
-        };
-        setCurrentAudio(audio);
-        setPausedAt(0);
-        await audio.play();
-        // window.isAnyAudioPlaying will be set in onplay
-        autoPlayBlocked.current[index] = false;
+        setAudioUrls(prev => ({ ...prev, [idx]: url }));
+        setTimeout(() => {
+          if (audioRefs.current[idx]) audioRefs.current[idx].play();
+        }, 100);
       }
     } catch (error) {
       console.error('TTS generation failed:', error);
-      window.isAnyAudioPlaying = false;
-    } finally {
-      setGeneratingTTSIndex(null);
-    }
-  };
-
-  // Pause audio (do not reset)
-  const handleTTSPause = () => {
-    if (currentAudio) {
-      currentAudio.pause();
-      setPausedAt(currentAudio.currentTime);
-      setPlayingIndex(null);
-    }
-  };
-
-  // Replay audio from start
-  const handleTTSReplay = () => {
-    if (audioUrl) {
-      if (currentAudio) {
-        currentAudio.pause();
-        currentAudio.currentTime = 0;
-      }
-      const audio = new Audio(audioUrl);
-      audio.onplay = () => setPlayingIndex(playingIndex);
-      audio.onpause = () => setPausedAt(audio.currentTime);
-      audio.onended = () => {
-        setPlayingIndex(null);
-        setPausedAt(0);
-      };
-      audio.onerror = () => {
-        setPlayingIndex(null);
-        setPausedAt(0);
-      };
-      setCurrentAudio(audio);
-      setPausedAt(0);
-      audio.play();
     }
   };
 
@@ -263,48 +248,79 @@ const ChatHistory = ({ chatHistory, onGenerateTTS }) => {
                   </ReactMarkdown>
                 </div>
               </div>
-              <div className="flex items-center space-x-2 mt-2">
-                <button
-                  onClick={() => handleTTSPlay(chat.assistant, `assistant-${index}`)}
-                  disabled={generatingTTSIndex === `assistant-${index}`}
-                  className="p-1 rounded hover:bg-green-200 transition-colors disabled:opacity-50"
-                  title={
-                    generatingTTSIndex === `assistant-${index}`
-                      ? 'Loading Audio'
-                      : playingIndex === `assistant-${index}` && pausedAt === 0
-                      ? 'Pause Audio'
-                      : pausedAt > 0 && playingIndex === `assistant-${index}`
-                      ? 'Resume Audio'
-                      : 'Play Audio'
-                  }
-                >
-                  {generatingTTSIndex === `assistant-${index}` ? (
-                    <Loader2 className="w-3 h-3 animate-spin text-green-600" />
-                  ) : playingIndex === `assistant-${index}` && pausedAt === 0 ? (
-                    <Pause className="w-3 h-3 text-green-600" />
-                  ) : (
-                    <Play className="w-3 h-3 text-green-600" />
-                  )}
-                </button>
-                <button
-                  onClick={handleTTSReplay}
-                  disabled={!audioUrl}
-                  className="p-1 rounded hover:bg-purple-200 transition-colors disabled:opacity-50"
-                  title="Replay Audio"
-                >
-                  <RotateCcw className="w-3 h-3 text-purple-600" />
-                </button>
-                <button
-                  onClick={() => handleCopyMessage(chat.assistant, `assistant-${index}`)}
-                  className="p-1 rounded hover:bg-green-200 transition-colors"
-                  title="Copy Message"
-                >
-                  {copiedIndex === `assistant-${index}` ? (
-                    <CheckCircle className="w-3 h-3 text-green-600" />
-                  ) : (
-                    <Copy className="w-3 h-3 text-green-600" />
-                  )}
-                </button>
+              {/* Controls */}
+              <div className="flex flex-col space-y-1 mt-2">
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => audioUrls[`assistant-${index}`] ? handlePlayPause(`assistant-${index}`) : handleGenerateTTS(chat.assistant, `assistant-${index}`)}
+                    className="p-1 rounded hover:bg-green-200 transition-colors disabled:opacity-50"
+                    title={playingIndex === `assistant-${index}` ? 'Pause Audio' : 'Play Audio'}
+                  >
+                    {playingIndex === `assistant-${index}` ? (
+                      <Pause className="w-3 h-3 text-green-600" />
+                    ) : (
+                      <Play className="w-3 h-3 text-green-600" />
+                    )}
+                  </button>
+                  <button
+                    onClick={() => {
+                      const audio = audioRefs.current[`assistant-${index}`];
+                      if (audio) {
+                        audio.currentTime = 0;
+                        audio.play();
+                      }
+                    }}
+                    disabled={!audioUrls[`assistant-${index}`]}
+                    className="p-1 rounded hover:bg-purple-200 transition-colors disabled:opacity-50"
+                    title="Replay Audio"
+                  >
+                    <RotateCcw className="w-3 h-3 text-purple-600" />
+                  </button>
+                  <button
+                    onClick={() => handleCopyMessage(chat.assistant, `assistant-${index}`)}
+                    className="p-1 rounded hover:bg-green-200 transition-colors"
+                    title="Copy Message"
+                  >
+                    {copiedIndex === `assistant-${index}` ? (
+                      <CheckCircle className="w-3 h-3 text-green-600" />
+                    ) : (
+                      <Copy className="w-3 h-3 text-green-600" />
+                    )}
+                  </button>
+                </div>
+                {/* Audio Player Bar */}
+                {audioUrls[`assistant-${index}`] && (
+                  <>
+                    <div className="flex items-center space-x-2 w-full mt-1">
+                      <span className="text-xs text-gray-500 w-10 text-right">
+                        {new Date((audioProgress[`assistant-${index}`] || 0) * 1000).toISOString().substr(14, 5)}
+                      </span>
+                      <div
+                        className="flex-1 h-2 bg-gray-200 rounded cursor-pointer relative"
+                        onClick={e => handleSeek(e, `assistant-${index}`)}
+                      >
+                        <div
+                          className="h-2 bg-green-400 rounded"
+                          style={{ width: `${((audioProgress[`assistant-${index}`] || 0) / ((audioDuration[`assistant-${index}`] || 1))) * 100}%` }}
+                        ></div>
+                      </div>
+                      <span className="text-xs text-gray-500 w-10 text-left">
+                        {audioDuration[`assistant-${index}`] ? new Date(audioDuration[`assistant-${index}`] * 1000).toISOString().substr(14, 5) : '00:00'}
+                      </span>
+                    </div>
+                    {/* Download Audio Button */}
+                    <div className="flex justify-end mt-1">
+                      <a
+                        href={audioUrls[`assistant-${index}`]}
+                        download={`chat-audio-${index}.mp3`}
+                        className="inline-flex items-center px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 text-xs font-medium transition-colors"
+                        title="Download Audio as MP3"
+                      >
+                        <Download className="w-4 h-4" />
+                      </a>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </div>

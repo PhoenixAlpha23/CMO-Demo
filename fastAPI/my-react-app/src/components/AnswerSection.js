@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Volume2, VolumeX, Copy, CheckCircle, Loader2, Pause, RotateCcw, Play } from 'lucide-react';
+import { Volume2, VolumeX, Copy, CheckCircle, Loader2, Pause, RotateCcw, Play, Download } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import './AnswerSection.css';
@@ -15,15 +15,43 @@ function detectLang(text) {
   return 'en'; // fallback
 }
 
+const langCodeToNameMap = {
+  en: "English",
+  hi: "Hindi",
+  mr: "Marathi",
+};
+
+function AudioPlayerSection({ langUsedForTTS, cacheHit, audioUrl, autoPlay, cleanReply, ttsAvailable, error }) {
+  const langDisplay = langCodeToNameMap[langUsedForTTS] || (langUsedForTTS ? String(langUsedForTTS).charAt(0).toUpperCase() + String(langUsedForTTS).slice(1) : "");
+  const cacheIndicator = cacheHit ? "🧠 (Cached)" : "🆕 (Generated)";
+
+  if (audioUrl) {
+    return (
+      <div>
+        <div className="text-sm text-gray-600 mb-2">
+          🔊 Voice: {langDisplay} | {cacheIndicator}
+        </div>
+        <audio src={audioUrl} controls autoPlay={autoPlay} style={{ width: "100%" }} />
+      </div>
+    );
+  } else if (!cleanReply?.trim()) {
+    return <div className="text-blue-600">ℹ️ No text to speak.</div>;
+  } else if (error) {
+    return <div className="text-yellow-600">⚠️ Could not generate audio for this response.<br/>{String(error)}</div>;
+  } else if (cleanReply?.trim() && !ttsAvailable) {
+    return <div className="text-blue-600">ℹ️ TTS is not available. Text response is shown above.</div>;
+  }
+  return null;
+}
+
 const AnswerSection = ({ answer, question, onGenerateTTS }) => {
   const [isPlayingTTS, setIsPlayingTTS] = useState(false);
   const [isGeneratingTTS, setIsGeneratingTTS] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
-  const [currentAudio, setCurrentAudio] = useState(null);
   const [audioUrl, setAudioUrl] = useState(null);
-  const [pausedAt, setPausedAt] = useState(0);
-  const autoPlayBlocked = useRef(false);
-  const lastPlayedAnswerRef = useRef(null);
+  const [audioProgress, setAudioProgress] = useState(0);
+  const [audioDuration, setAudioDuration] = useState(0);
+  const audioRef = useRef(null);
 
   // Global audio playing flag
   const isAnyAudioPlaying = () => window.isAnyAudioPlaying;
@@ -39,38 +67,71 @@ const AnswerSection = ({ answer, question, onGenerateTTS }) => {
     }
   };
 
-  const handleTTSToggle = async () => {
-    // Always stop all other audio before playing
-    window.dispatchEvent(new Event('stopAllAudioPlayback'));
-    if (window.isAnyAudioPlaying) return; // Don't play if another audio is still flagged as playing
-    if (currentAudio && !isPlayingTTS && !isGeneratingTTS && pausedAt > 0) {
-      currentAudio.currentTime = pausedAt;
-      await currentAudio.play();
-      setIsPlayingTTS(true);
-      setPausedAt(0);
-      autoPlayBlocked.current = false;
-      // window.isAnyAudioPlaying will be set in onplay
-      return;
+  // When audioUrl changes, create a new Audio object
+  useEffect(() => {
+    if (!audioUrl) return;
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
     }
-    if (isPlayingTTS && currentAudio) {
-      currentAudio.pause();
-      setPausedAt(currentAudio.currentTime);
-      setIsPlayingTTS(false);
-      autoPlayBlocked.current = true;
-      window.isAnyAudioPlaying = false;
-      return;
+    const audio = new Audio(audioUrl);
+    audioRef.current = audio;
+
+    audio.addEventListener('timeupdate', () => {
+      setAudioProgress(audio.currentTime);
+      setAudioDuration(audio.duration || 0);
+    });
+    audio.addEventListener('ended', () => setIsPlayingTTS(false));
+    audio.addEventListener('pause', () => setIsPlayingTTS(false));
+    audio.addEventListener('play', () => setIsPlayingTTS(true));
+
+    // Try to autoplay as soon as the audio is ready
+    const tryPlay = () => {
+      audio.load(); // Ensure audio is loaded
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(() => {
+          // Optionally handle autoplay block here
+        });
+      }
+    };
+    if (audio.readyState >= 1) {
+      tryPlay();
+    } else {
+      audio.addEventListener('loadedmetadata', tryPlay, { once: true });
     }
-    if (currentAudio) {
-      currentAudio.pause();
-      setIsPlayingTTS(false);
-      setCurrentAudio(null);
-      setPausedAt(0);
-      window.isAnyAudioPlaying = false;
+
+    return () => {
+      audio.pause();
+      audioRef.current = null;
+    };
+  }, [audioUrl]);
+
+  // Play/Pause handler
+  const handlePlayPause = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (audio.paused) {
+      audio.play();
+    } else {
+      audio.pause();
     }
-    if (audioUrl) {
-      URL.revokeObjectURL(audioUrl);
-      setAudioUrl(null);
-    }
+  };
+
+  // Seek handler
+  const handleSeek = (e) => {
+    const audio = audioRef.current;
+    if (!audio || !audioDuration) return;
+    const rect = e.target.getBoundingClientRect();
+    const percent = (e.clientX - rect.left) / rect.width;
+    const seekTime = percent * audioDuration;
+    audio.currentTime = seekTime;
+    setAudioProgress(seekTime);
+    if (isPlayingTTS) audio.play();
+  };
+
+  // Generate TTS and set audioUrl
+  const handleGenerateTTS = async () => {
     setIsGeneratingTTS(true);
     try {
       const lang = detectLang(answer);
@@ -81,114 +142,32 @@ const AnswerSection = ({ answer, question, onGenerateTTS }) => {
           { type: 'audio/wav' }
         );
         const url = URL.createObjectURL(audioBlob);
-        const audio = new Audio(url);
-        audio.onplay = () => { setIsPlayingTTS(true); window.isAnyAudioPlaying = true; };
-        audio.onended = () => {
-          setIsPlayingTTS(false);
-          setPausedAt(0);
-          window.isAnyAudioPlaying = false;
-        };
-        audio.onpause = () => { window.isAnyAudioPlaying = false; };
-        audio.onerror = () => {
-          setIsPlayingTTS(false);
-          setPausedAt(0);
-          window.isAnyAudioPlaying = false;
-          URL.revokeObjectURL(url);
-        };
-        setCurrentAudio(audio);
         setAudioUrl(url);
-        setPausedAt(0);
-        await audio.play();
-        // window.isAnyAudioPlaying will be set in onplay
-        autoPlayBlocked.current = false;
+        setTimeout(() => {
+          if (audioRef.current) audioRef.current.play();
+        }, 100);
       }
     } catch (error) {
       console.error('TTS generation failed:', error);
-      window.isAnyAudioPlaying = false;
     } finally {
       setIsGeneratingTTS(false);
     }
   };
 
-  // Pause audio
-  const handlePauseAudio = () => {
-    if (currentAudio) {
-      currentAudio.pause();
-      setPausedAt(currentAudio.currentTime);
-      setIsPlayingTTS(false);
-    }
-  };
-
-  // Replay audio from start
-  const handleReplayAudio = () => {
-    if (audioUrl) {
-      if (currentAudio) {
-        currentAudio.pause();
-        currentAudio.currentTime = 0;
-      }
-      const audio = new Audio(audioUrl);
-      audio.onplay = () => setIsPlayingTTS(true);
-      audio.onended = () => setIsPlayingTTS(false);
-      audio.onerror = () => setIsPlayingTTS(false);
-      setCurrentAudio(audio);
-      audio.play();
-    }
-  };
-
-  // Cleanup old audio when answer changes
+  // Cleanup on answer change
   useEffect(() => {
-    if (currentAudio) {
-      currentAudio.pause();
-      setIsPlayingTTS(false);
-      setCurrentAudio(null);
-      setPausedAt(0);
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
     }
     if (audioUrl) {
       URL.revokeObjectURL(audioUrl);
       setAudioUrl(null);
     }
-    autoPlayBlocked.current = false;
-    lastPlayedAnswerRef.current = null;
-    // eslint-disable-next-line
+    setAudioProgress(0);
+    setAudioDuration(0);
+    setIsPlayingTTS(false);
   }, [answer]);
-
-  // Auto-play TTS when a new answer is generated, unless blocked
-  useEffect(() => {
-    if (
-      answer &&
-      !autoPlayBlocked.current &&
-      lastPlayedAnswerRef.current !== answer
-    ) {
-      window.dispatchEvent(new Event('stopAllAudioPlayback'));
-      setTimeout(() => {
-        if (!window.isAnyAudioPlaying) {
-          lastPlayedAnswerRef.current = answer;
-          handleTTSToggle();
-        }
-      }, 50); // Wait for event handler to run
-    }
-    // eslint-disable-next-line
-  }, [answer]);
-
-  // Stop all audio playback if event received
-  useEffect(() => {
-    const stopAll = () => {
-      if (currentAudio) {
-        currentAudio.pause();
-        setIsPlayingTTS(false);
-        setPausedAt(currentAudio.currentTime);
-        window.isAnyAudioPlaying = false;
-      }
-    };
-    window.addEventListener('stopAllAudioPlayback', stopAll);
-    return () => {
-      window.removeEventListener('stopAllAudioPlayback', stopAll);
-      if (currentAudio) {
-        currentAudio.pause();
-        window.isAnyAudioPlaying = false;
-      }
-    };
-  }, [currentAudio]);
 
   if (!answer) return null;
 
@@ -232,40 +211,81 @@ const AnswerSection = ({ answer, question, onGenerateTTS }) => {
             </div>
           </div>
           {/* Controls */}
-          <div className="flex items-center space-x-2 mt-2">
-            <button
-              onClick={handleTTSToggle}
-              disabled={isGeneratingTTS}
-              className="p-2 rounded-lg bg-green-100 text-green-600 hover:bg-green-200 transition-colors disabled:opacity-50"
-              title={isPlayingTTS ? 'Pause Audio' : 'Play Audio'}
-            >
-              {isGeneratingTTS ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : isPlayingTTS ? (
-                <Pause className="w-4 h-4" />
-              ) : (
-                <Play className="w-4 h-4" />
-              )}
-            </button>
-            <button
-              onClick={handleReplayAudio}
-              disabled={!audioUrl}
-              className="p-2 rounded-lg bg-purple-100 text-purple-600 hover:bg-purple-200 transition-colors disabled:opacity-50"
-              title="Replay Audio"
-            >
-              <RotateCcw className="w-4 h-4" />
-            </button>
-            <button
-              onClick={handleCopyAnswer}
-              className="p-2 rounded-lg bg-blue-100 text-blue-600 hover:bg-blue-200 transition-colors"
-              title="Copy Answer"
-            >
-              {isCopied ? (
-                <CheckCircle className="w-4 h-4" />
-              ) : (
-                <Copy className="w-4 h-4" />
-              )}
-            </button>
+          <div className="flex flex-col space-y-1 mt-2">
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={audioUrl ? handlePlayPause : handleGenerateTTS}
+                disabled={isGeneratingTTS}
+                className="p-2 rounded-lg bg-green-100 text-green-600 hover:bg-green-200 transition-colors disabled:opacity-50"
+                title={isPlayingTTS ? 'Pause Audio' : 'Play Audio'}
+              >
+                {isGeneratingTTS ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : isPlayingTTS ? (
+                  <Pause className="w-4 h-4" />
+                ) : (
+                  <Play className="w-4 h-4" />
+                )}
+              </button>
+              <button
+                onClick={() => {
+                  const audio = audioRef.current;
+                  if (audio) {
+                    audio.currentTime = 0;
+                    audio.play();
+                  }
+                }}
+                disabled={!audioUrl}
+                className="p-2 rounded-lg bg-purple-100 text-purple-600 hover:bg-purple-200 transition-colors disabled:opacity-50"
+                title="Replay Audio"
+              >
+                <RotateCcw className="w-4 h-4" />
+              </button>
+              <button
+                onClick={handleCopyAnswer}
+                className="p-2 rounded-lg bg-blue-100 text-blue-600 hover:bg-blue-200 transition-colors"
+                title="Copy Answer"
+              >
+                {isCopied ? (
+                  <CheckCircle className="w-4 h-4" />
+                ) : (
+                  <Copy className="w-4 h-4" />
+                )}
+              </button>
+            </div>
+            {/* Audio Player Bar */}
+            {audioUrl && (
+              <>
+                <div className="flex items-center space-x-2 w-full">
+                  <span className="text-xs text-gray-500 w-10 text-right">
+                    {new Date(audioProgress * 1000).toISOString().substr(14, 5)}
+                  </span>
+                  <div
+                    className="flex-1 h-2 bg-gray-200 rounded cursor-pointer relative"
+                    onClick={handleSeek}
+                  >
+                    <div
+                      className="h-2 bg-green-400 rounded"
+                      style={{ width: `${(audioProgress / (audioDuration || 1)) * 100}%` }}
+                    ></div>
+                  </div>
+                  <span className="text-xs text-gray-500 w-10 text-left">
+                    {audioDuration ? new Date(audioDuration * 1000).toISOString().substr(14, 5) : '00:00'}
+                  </span>
+                </div>
+                {/* Download Audio Button */}
+                <div className="flex justify-end mt-1">
+                  <a
+                    href={audioUrl}
+                    download="answer-audio.mp3"
+                    className="inline-flex items-center px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 text-xs font-medium transition-colors"
+                    title="Download Audio as MP3"
+                  >
+                    <Download className="w-4 h-4" />
+                  </a>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>

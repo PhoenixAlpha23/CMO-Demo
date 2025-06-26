@@ -19,6 +19,7 @@ function App() {
   const [activeTab, setActiveTab] = useState('upload');
   const [langWarning, setLangWarning] = useState('');
   const [isRagBuilding, setIsRagBuilding] = useState(false);
+  const [audioUrl, setAudioUrl] = useState(null); // Add this state at the top with other states
 
   useEffect(() => {
     checkApiAvailability();
@@ -97,20 +98,35 @@ function App() {
     }
     setIsLoading(true);
     try {
-      const result = await apiClient.query(inputText);
+      // Start both requests in parallel
+      const textPromise = apiClient.query(inputText);
+      const ttsPromise = apiClient.generateTTS(inputText); // or use textPromise's reply if needed
+      const [result, ttsResult] = await Promise.all([textPromise, ttsPromise]);
       setCurrentAnswer(result.reply);
-      setCurrentQuestion(inputText); // <-- Set the current question
-      
+      setCurrentQuestion(inputText);
+
+      // Prepare audio
+      if (ttsResult && ttsResult.audio_base64) {
+        const audioBlob = new Blob(
+          [Uint8Array.from(atob(ttsResult.audio_base64), c => c.charCodeAt(0))],
+          { type: 'audio/wav' }
+        );
+        const url = URL.createObjectURL(audioBlob);
+        setAudioUrl(url);
+      } else {
+        setAudioUrl(null);
+      }
+
       const newEntry = {
         user: inputText,
         assistant: result.reply,
         model: 'llama-3.3-70b-versatile',
         timestamp: new Date().toLocaleTimeString()
       };
-      
       setChatHistory(prev => [newEntry, ...prev]);
     } catch (error) {
       setCurrentAnswer(`Error: ${error.message}`);
+      setAudioUrl(null);
     } finally {
       setIsLoading(false);
     }
@@ -271,8 +287,9 @@ function App() {
               {currentAnswer && (
                 <AnswerSection
                   answer={currentAnswer}
-                  question={currentQuestion} // <-- Make sure this is set!
+                  question={currentQuestion}
                   onGenerateTTS={handleGenerateTTS}
+                  audioUrl={audioUrl}
                 />
               )}
             </div>
