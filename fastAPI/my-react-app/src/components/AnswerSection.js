@@ -21,29 +21,6 @@ const langCodeToNameMap = {
   mr: "Marathi",
 };
 
-function AudioPlayerSection({ langUsedForTTS, cacheHit, audioUrl, autoPlay, cleanReply, ttsAvailable, error }) {
-  const langDisplay = langCodeToNameMap[langUsedForTTS] || (langUsedForTTS ? String(langUsedForTTS).charAt(0).toUpperCase() + String(langUsedForTTS).slice(1) : "");
-  const cacheIndicator = cacheHit ? "🧠 (Cached)" : "🆕 (Generated)";
-
-  if (audioUrl) {
-    return (
-      <div>
-        <div className="text-sm text-gray-600 mb-2">
-          🔊 Voice: {langDisplay} | {cacheIndicator}
-        </div>
-        <audio src={audioUrl} controls autoPlay={autoPlay} style={{ width: "100%" }} />
-      </div>
-    );
-  } else if (!cleanReply?.trim()) {
-    return <div className="text-blue-600">ℹ️ No text to speak.</div>;
-  } else if (error) {
-    return <div className="text-yellow-600">⚠️ Could not generate audio for this response.<br/>{String(error)}</div>;
-  } else if (cleanReply?.trim() && !ttsAvailable) {
-    return <div className="text-blue-600">ℹ️ TTS is not available. Text response is shown above.</div>;
-  }
-  return null;
-}
-
 const AnswerSection = ({ answer, question, onGenerateTTS, audioUrl, autoPlay }) => {
   const [isPlayingTTS, setIsPlayingTTS] = useState(false);
   const [isGeneratingTTS, setIsGeneratingTTS] = useState(false);

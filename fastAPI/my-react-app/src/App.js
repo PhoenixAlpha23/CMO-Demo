@@ -107,6 +107,9 @@ function App() {
 
       // Prepare audio
       if (ttsResult && ttsResult.audio_base64) {
+        if (audioUrl) {
+          URL.revokeObjectURL(audioUrl); // Revoke previous URL
+        }
         const audioBlob = new Blob(
           [Uint8Array.from(atob(ttsResult.audio_base64), c => c.charCodeAt(0))],
           { type: 'audio/wav' }
