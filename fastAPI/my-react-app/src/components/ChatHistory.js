@@ -316,7 +316,7 @@ const ChatHistory = ({ chatHistory, onGenerateTTS }) => {
                         className="inline-flex items-center px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 text-xs font-medium transition-colors"
                         title="Download Audio as MP3"
                       >
-                        <Download className="w-4 h-4" />
+                        Download Audio
                       </a>
                     </div>
                   </>

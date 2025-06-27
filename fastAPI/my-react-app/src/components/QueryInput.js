@@ -58,11 +58,11 @@ const QueryInput = ({
         }
         const avg = sum / bufferLength;
         // If avg is below threshold, consider it silence
-        if (avg < 5) {
+        if (avg < 8) {
           if (!silenceTimeoutRef.current) {
             silenceTimeoutRef.current = setTimeout(() => {
               stopRecording();
-            }, 2000);
+            }, 1200);
           }
         } else {
           if (silenceTimeoutRef.current) {
@@ -83,11 +83,13 @@ const QueryInput = ({
       wsRef.current = socket;
 
       socket.onopen = () => {
+        console.log('WebSocket connection opened:', WS_URL);
         setIsRecording(true);
-        mediaRecorder.start(250); // send data every 250ms
+        mediaRecorder.start(1000); // send data every 1000ms (was 250ms)
       };
 
       socket.onmessage = (event) => {
+        console.log('WebSocket message received:', event.data);
         try {
           const data = JSON.parse(event.data);
           if (data.partial) {
@@ -100,12 +102,24 @@ const QueryInput = ({
             mediaRecorder.stop();
             stream.getTracks().forEach(track => track.stop());
             socket.close();
-            // Clean up audio context
             if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
               audioContextRef.current.close();
             }
           }
-        } catch (err) {}
+          if (data.error) {
+            setInputText(data.error); // Show error in the UI
+            setIsTranscribing(false);
+            setIsRecording(false);
+            mediaRecorder.stop();
+            stream.getTracks().forEach(track => track.stop());
+            socket.close();
+            if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+              audioContextRef.current.close();
+            }
+          }
+        } catch (err) {
+          console.error('Error parsing WebSocket message:', err, event.data);
+        }
       };
 
       socket.onerror = (event) => {
@@ -119,6 +133,10 @@ const QueryInput = ({
         if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
           audioContextRef.current.close();
         }
+      };
+
+      socket.onclose = (event) => {
+        console.log('WebSocket connection closed:', event);
       };
 
       mediaRecorder.ondataavailable = (event) => {
@@ -136,6 +154,7 @@ const QueryInput = ({
           audioContextRef.current.close();
         }
         if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
+        // Do NOT close the socket here; let it be closed after final result is received
       };
 
       transcriptionTimeout.current = setTimeout(() => {
@@ -169,7 +188,7 @@ const QueryInput = ({
     // Stop WebSocket if open
     if (wsRef.current && wsRef.current.readyState === 1) {
       wsRef.current.send(JSON.stringify({ event: 'end' }));
-      wsRef.current.close();
+      // Do NOT close the socket here; let it be closed after final result is received
     }
 
     // Stop audio context

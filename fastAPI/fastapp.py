@@ -15,11 +15,12 @@ from contextlib import asynccontextmanager
 import os
 from groq import Groq
 import asyncio
+import ffmpeg
 
 # Core services
 from core.rag_services import build_rag_chain_with_model_choice, process_scheme_query_with_retry
 from core.tts_services import generate_audio_response, TTS_AVAILABLE
-from core.transcription import transcribe_audio
+from core.transcription import transcribe_audio, transcribe_audio_google, transcribe_audio_whisper
 from utils.config import load_env_vars, GROQ_API_KEY
 from utils.helpers import check_rate_limit_delay, LANG_CODE_TO_NAME, ALLOWED_TTS_LANGS
 
@@ -210,6 +211,16 @@ def improved_rate_limit_check(session_id: str) -> Optional[float]:
     else:
         # Fallback to original logic
         return check_rate_limit_delay()
+
+def convert_webm_to_wav(webm_bytes):
+    input_buffer = io.BytesIO(webm_bytes)
+    out, _ = (
+        ffmpeg
+        .input('pipe:0')
+        .output('pipe:1', format='wav', acodec='pcm_s16le', ac=1, ar='16000')
+        .run(input=input_buffer.read(), capture_stdout=True, capture_stderr=True)
+    )
+    return out
 
 # Enhanced models
 class QueryRequest(BaseModel):
@@ -453,61 +464,118 @@ async def clear_session(session_id: str):
 async def websocket_transcribe(websocket: WebSocket):
     await websocket.accept()
     audio_bytes = bytearray()
-    groq_client = get_groq_client()
-    partial_task = None
-    stop_partial = False
-    lock = asyncio.Lock()
-    last_partial_sent = b""
-
-    async def send_partial():
-        nonlocal last_partial_sent
-        while not stop_partial:
-            await asyncio.sleep(2)  # every 2 seconds
-            async with lock:
-                if len(audio_bytes) > 16000:  # Only send if enough audio (about 1s at 16kHz)
-                    try:
-                        # Only send if new audio since last partial
-                        if audio_bytes != last_partial_sent:
-                            success, result = transcribe_audio(groq_client, bytes(audio_bytes))
-                            if success:
-                                await websocket.send_text(json.dumps({"partial": result}))
-                                last_partial_sent = bytes(audio_bytes)
-                    except Exception as e:
-                        await websocket.send_text(json.dumps({"error": f"Partial transcription failed: {str(e)}"}))
-                        break
-
+    WINDOW_SIZE = 32000  # About 2 seconds at 16kHz
     try:
-        stop_partial = False
-        partial_task = asyncio.create_task(send_partial())
         while True:
-            data = await websocket.receive_bytes()
-            if data == b"":
+            try:
+                message = await websocket.receive()
+                if message["type"] == "websocket.receive":
+                    if "bytes" in message and message["bytes"] is not None:
+                        data = message["bytes"]
+                        if data == b"":
+                            break
+                        audio_bytes.extend(data)
+                        # Only attempt conversion if chunk is large enough
+                        if len(audio_bytes) > WINDOW_SIZE:
+                            window_audio = audio_bytes[-WINDOW_SIZE:]
+                        else:
+                            window_audio = audio_bytes
+                        if len(window_audio) < 48000:
+                            continue  # Skip conversion for very small chunks
+                        try:
+                            wav_bytes = convert_webm_to_wav(bytes(window_audio))
+                        except Exception as e:
+                            print("[ERROR] Audio conversion failed:", e)
+                            if isinstance(e, ffmpeg.Error):
+                                try:
+                                    print("[FFMPEG STDERR]", e.stderr.decode())
+                                except Exception:
+                                    pass
+                            try:
+                                await websocket.send_text(json.dumps({"error": f"Audio conversion failed: {str(e)}"}))
+                            except Exception as send_err:
+                                print("[ERROR] Could not send error message, websocket may be closed:", send_err)
+                            continue
+                        try:
+                            print("[DEBUG] Calling Whisper STT with", len(wav_bytes), "bytes")
+                            success, result = transcribe_audio_whisper(wav_bytes, model_name="medium")
+                            print("[DEBUG] Whisper STT result:", result)
+                        except Exception as e:
+                            print("[ERROR] Whisper STT failed:", e)
+                            try:
+                                await websocket.send_text(json.dumps({"error": f"Whisper STT failed: {str(e)}"}))
+                            except Exception as send_err:
+                                print("[ERROR] Could not send error message, websocket may be closed:", send_err)
+                            continue
+                        if success:
+                            try:
+                                await websocket.send_text(json.dumps({"partial": result}))
+                            except Exception as send_err:
+                                print("[ERROR] Could not send partial result, websocket may be closed:", send_err)
+                                break
+                    elif "text" in message and message["text"] is not None:
+                        # Handle text messages (e.g., {"event": "end"}) if needed
+                        # For now, just break on 'end' event
+                        try:
+                            event_data = json.loads(message["text"])
+                            if event_data.get("event") == "end":
+                                break
+                        except Exception:
+                            pass
+                else:
+                    break
+            except Exception as e:
+                print("[ERROR] WebSocket receive/process loop exception:", e)
+                try:
+                    await websocket.send_text(json.dumps({"error": f"WebSocket receive/process loop exception: {str(e)}"}))
+                except Exception as send_err:
+                    print("[ERROR] Could not send error message, websocket may be closed:", send_err)
                 break
-            async with lock:
-                audio_bytes.extend(data)
     except WebSocketDisconnect:
         pass
     except Exception as e:
-        await websocket.send_text(json.dumps({"error": str(e)}))
-        await websocket.close()
-        stop_partial = True
-        if partial_task:
-            await partial_task
-        return
+        print("[ERROR] WebSocket outer exception:", e)
+        try:
+            await websocket.send_text(json.dumps({"error": str(e)}))
+        except Exception as send_err:
+            print("[ERROR] Could not send error message, websocket may be closed:", send_err)
     # Final transcription after receiving all audio
     try:
-        stop_partial = True
-        if partial_task:
-            await partial_task
-        success, result = transcribe_audio(groq_client, bytes(audio_bytes))
-        if success:
-            await websocket.send_text(json.dumps({"final": result}))
-        else:
-            await websocket.send_text(json.dumps({"error": result}))
-    except Exception as e:
-        await websocket.send_text(json.dumps({"error": f"Transcription failed: {str(e)}"}))
+        try:
+            wav_bytes = convert_webm_to_wav(bytes(audio_bytes))
+        except Exception as e:
+            print("[ERROR] Final audio conversion failed:", e)
+            try:
+                await websocket.send_text(json.dumps({"error": f"Final audio conversion failed: {str(e)}"}))
+            except Exception as send_err:
+                print("[ERROR] Could not send error message, websocket may be closed:", send_err)
+            return
+        try:
+            print("[DEBUG] Final Whisper STT with", len(wav_bytes), "bytes")
+            success, result = transcribe_audio_whisper(wav_bytes, model_name="base")
+            print("[DEBUG] Final Whisper STT result:", result)
+            if success:
+                try:
+                    await websocket.send_text(json.dumps({"final": result}))
+                except Exception as send_err:
+                    print("[ERROR] Could not send final result, websocket may be closed:", send_err)
+            else:
+                try:
+                    await websocket.send_text(json.dumps({"error": result}))
+                except Exception as send_err:
+                    print("[ERROR] Could not send error message, websocket may be closed:", send_err)
+        except Exception as e:
+            print("[ERROR] Final Whisper STT failed:", e)
+            try:
+                await websocket.send_text(json.dumps({"error": f"Final Whisper STT failed: {str(e)}"}))
+            except Exception as send_err:
+                print("[ERROR] Could not send error message, websocket may be closed:", send_err)
+            return
     finally:
-        await websocket.close()
+        try:
+            await websocket.close()
+        except Exception as close_err:
+            print("[ERROR] Could not close websocket:", close_err)
 
 if __name__ == "__main__":
     import uvicorn
