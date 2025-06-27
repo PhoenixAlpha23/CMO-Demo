@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, Form, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, UploadFile, Form, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -413,20 +413,23 @@ async def health_check():
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": f"Health check failed: {str(e)}"})
 
-@app.post("/transcribe/")
-async def transcribe_audio_endpoint(
-    audio_file: UploadFile = File(...),
-    groq_client: Groq = Depends(get_groq_client)
-):
+@app.post("/transcribe")
+async def transcribe_endpoint(audio: UploadFile = File(...)):
     try:
-        audio_bytes = await audio_file.read()
-        success, result = transcribe_audio(groq_client, audio_bytes)
-        if success:
-            return {"transcription": result}
+        audio_bytes = await audio.read()
+        filename = audio.filename or ''
+        # If the file is webm, convert to wav
+        if filename.endswith('.webm'):
+            wav_bytes = convert_webm_to_wav(audio_bytes)
         else:
-            return JSONResponse(status_code=400, content={"error": result})
+            wav_bytes = audio_bytes
+        from core.transcription import transcribe_audio_whisper
+        success, transcription = transcribe_audio_whisper(wav_bytes, model_name="large")
+        if not success:
+            return {"error": transcription}
+        return {"transcription": transcription}
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error": f"Transcription failed: {str(e)}"})
+        return {"error": str(e)}
 
 @app.get("/sessions/")
 async def list_sessions():
@@ -459,123 +462,6 @@ async def clear_session(session_id: str):
             return {"message": f"Session {session_id} cleared (memory only)"}
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
-
-@app.websocket("/ws/transcribe")
-async def websocket_transcribe(websocket: WebSocket):
-    await websocket.accept()
-    audio_bytes = bytearray()
-    WINDOW_SIZE = 32000  # About 2 seconds at 16kHz
-    try:
-        while True:
-            try:
-                message = await websocket.receive()
-                if message["type"] == "websocket.receive":
-                    if "bytes" in message and message["bytes"] is not None:
-                        data = message["bytes"]
-                        if data == b"":
-                            break
-                        audio_bytes.extend(data)
-                        # Only attempt conversion if chunk is large enough
-                        if len(audio_bytes) > WINDOW_SIZE:
-                            window_audio = audio_bytes[-WINDOW_SIZE:]
-                        else:
-                            window_audio = audio_bytes
-                        if len(window_audio) < 48000:
-                            continue  # Skip conversion for very small chunks
-                        try:
-                            wav_bytes = convert_webm_to_wav(bytes(window_audio))
-                        except Exception as e:
-                            print("[ERROR] Audio conversion failed:", e)
-                            if isinstance(e, ffmpeg.Error):
-                                try:
-                                    print("[FFMPEG STDERR]", e.stderr.decode())
-                                except Exception:
-                                    pass
-                            try:
-                                await websocket.send_text(json.dumps({"error": f"Audio conversion failed: {str(e)}"}))
-                            except Exception as send_err:
-                                print("[ERROR] Could not send error message, websocket may be closed:", send_err)
-                            continue
-                        try:
-                            print("[DEBUG] Calling Whisper STT with", len(wav_bytes), "bytes")
-                            success, result = transcribe_audio_whisper(wav_bytes, model_name="medium")
-                            print("[DEBUG] Whisper STT result:", result)
-                        except Exception as e:
-                            print("[ERROR] Whisper STT failed:", e)
-                            try:
-                                await websocket.send_text(json.dumps({"error": f"Whisper STT failed: {str(e)}"}))
-                            except Exception as send_err:
-                                print("[ERROR] Could not send error message, websocket may be closed:", send_err)
-                            continue
-                        if success:
-                            try:
-                                await websocket.send_text(json.dumps({"partial": result}))
-                            except Exception as send_err:
-                                print("[ERROR] Could not send partial result, websocket may be closed:", send_err)
-                                break
-                    elif "text" in message and message["text"] is not None:
-                        # Handle text messages (e.g., {"event": "end"}) if needed
-                        # For now, just break on 'end' event
-                        try:
-                            event_data = json.loads(message["text"])
-                            if event_data.get("event") == "end":
-                                break
-                        except Exception:
-                            pass
-                else:
-                    break
-            except Exception as e:
-                print("[ERROR] WebSocket receive/process loop exception:", e)
-                try:
-                    await websocket.send_text(json.dumps({"error": f"WebSocket receive/process loop exception: {str(e)}"}))
-                except Exception as send_err:
-                    print("[ERROR] Could not send error message, websocket may be closed:", send_err)
-                break
-    except WebSocketDisconnect:
-        pass
-    except Exception as e:
-        print("[ERROR] WebSocket outer exception:", e)
-        try:
-            await websocket.send_text(json.dumps({"error": str(e)}))
-        except Exception as send_err:
-            print("[ERROR] Could not send error message, websocket may be closed:", send_err)
-    # Final transcription after receiving all audio
-    try:
-        try:
-            wav_bytes = convert_webm_to_wav(bytes(audio_bytes))
-        except Exception as e:
-            print("[ERROR] Final audio conversion failed:", e)
-            try:
-                await websocket.send_text(json.dumps({"error": f"Final audio conversion failed: {str(e)}"}))
-            except Exception as send_err:
-                print("[ERROR] Could not send error message, websocket may be closed:", send_err)
-            return
-        try:
-            print("[DEBUG] Final Whisper STT with", len(wav_bytes), "bytes")
-            success, result = transcribe_audio_whisper(wav_bytes, model_name="base")
-            print("[DEBUG] Final Whisper STT result:", result)
-            if success:
-                try:
-                    await websocket.send_text(json.dumps({"final": result}))
-                except Exception as send_err:
-                    print("[ERROR] Could not send final result, websocket may be closed:", send_err)
-            else:
-                try:
-                    await websocket.send_text(json.dumps({"error": result}))
-                except Exception as send_err:
-                    print("[ERROR] Could not send error message, websocket may be closed:", send_err)
-        except Exception as e:
-            print("[ERROR] Final Whisper STT failed:", e)
-            try:
-                await websocket.send_text(json.dumps({"error": f"Final Whisper STT failed: {str(e)}"}))
-            except Exception as send_err:
-                print("[ERROR] Could not send error message, websocket may be closed:", send_err)
-            return
-    finally:
-        try:
-            await websocket.close()
-        except Exception as close_err:
-            print("[ERROR] Could not close websocket:", close_err)
 
 if __name__ == "__main__":
     import uvicorn

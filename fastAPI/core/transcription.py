@@ -62,7 +62,7 @@ def transcribe_audio_google(audio_bytes, sample_rate=16000, language_code="en-US
         return (True, transcription)
     return (False, "")
 
-def transcribe_audio_whisper(audio_bytes, model_name="medium"):
+def transcribe_audio_whisper(audio_bytes, model_name="large"):
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
         f.write(audio_bytes)
         temp_path = f.name
