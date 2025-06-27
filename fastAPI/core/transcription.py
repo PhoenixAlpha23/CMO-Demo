@@ -1,8 +1,6 @@
 import tempfile
 import os
 import langid  # pip install langid
-from google.cloud import speech
-import whisper
 from typing import cast
 
 SUPPORTED_LANGUAGES = {"en": "English", "hi": "Hindi", "mr": "Marathi"}
@@ -46,35 +44,34 @@ def transcribe_audio(client, audio_bytes):
         os.unlink(temp_path) if os.path.exists(temp_path) else None
 
 def transcribe_audio_google(audio_bytes, sample_rate=16000, language_code="en-US"):
+    from google.cloud import speech
     client = speech.SpeechClient()
     audio = speech.RecognitionAudio(content=audio_bytes)
     config = speech.RecognitionConfig(
         encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
         sample_rate_hertz=sample_rate,
         language_code=language_code,
-        # Optionally add speech_contexts for custom vocabulary
-        # speech_contexts=[speech.SpeechContext(phrases=["jssk", "your_custom_word"])]
     )
     response = client.recognize(config=config, audio=audio)
     for result in response.results:
         transcription = result.alternatives[0].transcript
-        # Validate language if you want, or just return
         return (True, transcription)
     return (False, "")
 
 def transcribe_audio_whisper(audio_bytes, model_name="large"):
+    import whisper
+    import tempfile
+    import os
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
         f.write(audio_bytes)
         temp_path = f.name
-    model = whisper.load_model(model_name)  # "tiny", "base", "small", "medium", "large"
-    # Use Whisper's own language detection
+    model = whisper.load_model(model_name)
     audio = whisper.load_audio(temp_path)
     audio = whisper.pad_or_trim(audio)
     mel = whisper.log_mel_spectrogram(audio).to(model.device)
     _, probs = model.detect_language(mel)
     probs = cast(dict[str, float], probs)
     detected_lang = max(probs, key=lambda k: probs[k])
-    print(f"[DEBUG] Whisper detected language: {detected_lang}")
     if detected_lang not in SUPPORTED_LANGUAGES:
         supported_langs = ", ".join(SUPPORTED_LANGUAGES.values())
         os.unlink(temp_path)
@@ -84,5 +81,8 @@ def transcribe_audio_whisper(audio_bytes, model_name="large"):
         )
     result = model.transcribe(temp_path)
     os.unlink(temp_path)
-    transcription = result["text"]
+    if isinstance(result, dict) and 'text' in result:
+        transcription = result['text']
+    else:
+        transcription = ''
     return True, transcription

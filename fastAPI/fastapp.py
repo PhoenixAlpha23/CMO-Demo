@@ -16,11 +16,12 @@ import os
 from groq import Groq
 import asyncio
 import ffmpeg
+from core.transcription import transcribe_audio_whisper
 
 # Core services
 from core.rag_services import build_rag_chain_with_model_choice, process_scheme_query_with_retry
 from core.tts_services import generate_audio_response, TTS_AVAILABLE
-from core.transcription import transcribe_audio, transcribe_audio_google, transcribe_audio_whisper
+from core.transcription import transcribe_audio, transcribe_audio_google
 from utils.config import load_env_vars, GROQ_API_KEY
 from utils.helpers import check_rate_limit_delay, LANG_CODE_TO_NAME, ALLOWED_TTS_LANGS
 
@@ -415,21 +416,20 @@ async def health_check():
 
 @app.post("/transcribe")
 async def transcribe_endpoint(audio: UploadFile = File(...)):
-    try:
-        audio_bytes = await audio.read()
-        filename = audio.filename or ''
-        # If the file is webm, convert to wav
-        if filename.endswith('.webm'):
-            wav_bytes = convert_webm_to_wav(audio_bytes)
-        else:
-            wav_bytes = audio_bytes
-        from core.transcription import transcribe_audio_whisper
-        success, transcription = transcribe_audio_whisper(wav_bytes, model_name="large")
-        if not success:
-            return {"error": transcription}
-        return {"transcription": transcription}
-    except Exception as e:
-        return {"error": str(e)}
+    print("[DEBUG] /transcribe endpoint called")
+    filename = audio.filename or ''
+    print(f"[DEBUG] Uploaded filename: {filename}")
+    audio_bytes = await audio.read()
+    print(f"[DEBUG] Received audio file size: {len(audio_bytes)} bytes")
+    # If the file is webm, convert to wav
+    if filename.endswith('.webm'):
+        wav_bytes = convert_webm_to_wav(audio_bytes)
+    else:
+        wav_bytes = audio_bytes
+    success, transcription = transcribe_audio_whisper(wav_bytes, model_name="large")
+    if not success:
+        return {"error": transcription}
+    return {"transcription": transcription}
 
 @app.get("/sessions/")
 async def list_sessions():
