@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Send, Loader2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import MicrophoneButton from './MicrophoneButton';
@@ -11,6 +11,7 @@ const QueryInput = ({
   assistantReply,
 }) => {
   const [inputText, setInputText] = useState('');
+  const textareaRef = useRef(null);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -32,6 +33,9 @@ const QueryInput = ({
 
   const handleTranscription = (transcription) => {
     setInputText(transcription);
+    if (textareaRef.current) {
+      textareaRef.current.focus();
+    }
   };
 
   return (
@@ -44,13 +48,6 @@ const QueryInput = ({
         </div>
       )}
 
-      {/* Speech bubble for status */}
-      <div className="mb-2">
-        <div className="rounded-xl shadow-lg px-6 py-3 bg-white text-gray-800 text-xl text-center min-w-[250px] min-h-[48px] flex items-center justify-center">
-          {inputText || 'Type your question to ask'}
-        </div>
-      </div>
-
       {/* Microphone button */}
       <div className="w-full flex justify-center mb-2">
         <MicrophoneButton 
@@ -62,6 +59,7 @@ const QueryInput = ({
       {/* Text input and send button below */}
       <form onSubmit={handleSubmit} className="w-full flex flex-col space-y-2">
         <textarea
+          ref={textareaRef}
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
           onKeyDown={handleKeyDown}

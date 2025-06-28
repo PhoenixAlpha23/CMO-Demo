@@ -13,6 +13,7 @@ const MicrophoneButton = ({ onTranscription, disabled = false }) => {
   const animationFrameRef = useRef(null);
   const fallbackAnimationRef = useRef(null);
   const scaleAnimationRef = useRef(null);
+  const audioLevelHistory = useRef([]);
 
   useEffect(() => {
     return () => {
@@ -92,8 +93,12 @@ const MicrophoneButton = ({ onTranscription, disabled = false }) => {
           
           // Calculate average volume level with better sensitivity
           const average = dataArray.reduce((sum, value) => sum + value, 0) / dataArray.length;
-          const normalizedLevel = Math.max(0.1, average / 255); // Minimum level for visibility
-          setAudioLevel(normalizedLevel);
+          const normalizedLevel = Math.max(0.05, average / 255); // Minimum level for visibility
+          // Smooth audio level using a moving average
+          audioLevelHistory.current.push(normalizedLevel);
+          if (audioLevelHistory.current.length > 5) audioLevelHistory.current.shift();
+          const smoothedLevel = audioLevelHistory.current.reduce((a, b) => a + b, 0) / audioLevelHistory.current.length;
+          setAudioLevel(smoothedLevel);
         } catch (error) {
           console.warn('Audio analysis error:', error);
           // Fallback to a breathing effect if audio analysis fails
@@ -186,8 +191,8 @@ const MicrophoneButton = ({ onTranscription, disabled = false }) => {
 
   // Calculate glow properties based on audio level
   const glowSize = 80 + (audioLevel * 100); // Much larger size for better visibility
-  const animationSpeed = 1 + (audioLevel * 1.5); // Chrome-style speed adjustment
-  const isSpeaking = audioLevel > 0.15; // Threshold to determine if user is speaking
+  const animationSpeed = Math.max(1.1, 1 + audioLevel * 1.5); // Clamp minimum speed
+  const isSpeaking = audioLevel > 0.08; // Moderate threshold for less noise sensitivity
 
   return (
     <div className="flex flex-col items-center space-x-2">
@@ -201,12 +206,10 @@ const MicrophoneButton = ({ onTranscription, disabled = false }) => {
               height: `${100 + (audioLevel * 80)}px`,
               left: `calc(50% - ${(100 + (audioLevel * 80)) / 2}px)`,
               top: `calc(50% - ${(100 + (audioLevel * 80)) / 2}px)`,
-              border: `4px solid rgba(59, 130, 246, ${0.8 + audioLevel * 0.2})`,
               borderRadius: '50%',
               zIndex: 20,
-              transform: `scale(${isSpeaking ? animationScale : 1})`,
+              transform: `scale(${isSpeaking ? animationScale : 1.01})`,
               transition: 'all 0.1s ease-out',
-              boxShadow: `0 0 30px rgba(59, 130, 246, ${0.5 + audioLevel * 0.5})`
             }}
           />
         )}
@@ -225,7 +228,7 @@ const MicrophoneButton = ({ onTranscription, disabled = false }) => {
                 background: `radial-gradient(circle, rgba(59, 130, 246, 1) 0%, rgba(59, 130, 246, 0.8) 30%, rgba(59, 130, 246, 0.5) 50%, rgba(59, 130, 246, 0.3) 70%, transparent 85%)`,
                 boxShadow: '0 0 40px rgba(59, 130, 246, 0.6)',
                 zIndex: 20,
-                animation: `chromeRipple1 ${2 / animationSpeed}s ease-out infinite`
+                animation: `chromeRipple1 ${2 / animationSpeed}s ease-out infinite`,
               }}
             />
             {/* Ripple 2 - Medium */}
@@ -240,7 +243,7 @@ const MicrophoneButton = ({ onTranscription, disabled = false }) => {
                 boxShadow: '0 0 30px rgba(59, 130, 246, 0.5)',
                 zIndex: 20,
                 animation: `chromeRipple2 ${2 / animationSpeed}s ease-out infinite`,
-                animationDelay: `${0.5 / animationSpeed}s`
+                animationDelay: `${0.5 / animationSpeed}s`,
               }}
             />
             {/* Ripple 3 - Smallest */}
@@ -255,35 +258,7 @@ const MicrophoneButton = ({ onTranscription, disabled = false }) => {
                 boxShadow: '0 0 25px rgba(59, 130, 246, 0.4)',
                 zIndex: 20,
                 animation: `chromeRipple3 ${2 / animationSpeed}s ease-out infinite`,
-                animationDelay: `${1 / animationSpeed}s`
-              }}
-            />
-            {/* Chrome-style pulse core */}
-            <div
-              className="absolute rounded-full pointer-events-none"
-              style={{
-                width: `${glowSize * 0.4}px`,
-                height: `${glowSize * 0.4}px`,
-                left: `calc(50% - ${glowSize * 0.2}px)`,
-                top: `calc(50% - ${glowSize * 0.2}px)`,
-                background: `radial-gradient(circle, rgba(59, 130, 246, 1) 0%, rgba(59, 130, 246, 0.9) 30%, rgba(59, 130, 246, 0.7) 60%, rgba(59, 130, 246, 0.4) 80%, transparent 95%)`,
-                boxShadow: '0 0 35px rgba(59, 130, 246, 0.8)',
-                zIndex: 20,
-                animation: `chromePulse ${1.5 / animationSpeed}s ease-in-out infinite`
-              }}
-            />
-            {/* Recording indicator - Chrome red */}
-            <div
-              className="absolute rounded-full pointer-events-none"
-              style={{
-                width: `${glowSize * 0.25}px`,
-                height: `${glowSize * 0.25}px`,
-                left: `calc(50% - ${glowSize * 0.125}px)`,
-                top: `calc(50% - ${glowSize * 0.125}px)`,
-                background: `radial-gradient(circle, rgba(239, 68, 68, 1) 0%, rgba(239, 68, 68, 0.9) 40%, rgba(239, 68, 68, 0.6) 70%, transparent 90%)`,
-                boxShadow: '0 0 20px rgba(239, 68, 68, 0.7)',
-                zIndex: 20,
-                animation: `recordingPulse ${0.8 / animationSpeed}s cubic-bezier(0.4, 0, 0.6, 1) infinite`
+                animationDelay: `${1 / animationSpeed}s`,
               }}
             />
           </>
@@ -307,7 +282,7 @@ const MicrophoneButton = ({ onTranscription, disabled = false }) => {
         <button
           onClick={handleClick}
           disabled={disabled || isProcessing}
-          className={`relative p-5 rounded-full transition-all duration-200 shadow-lg focus:outline-none focus:ring-4 focus:ring-blue-300
+          className={`relative p-5 rounded-full transition-all duration-200 shadow-lg
             ${isRecording
               ? 'bg-red-500 hover:bg-red-600 text-white shadow-xl'
               : 'bg-blue-500 hover:bg-blue-600 text-white shadow-md hover:shadow-lg'}
@@ -315,7 +290,8 @@ const MicrophoneButton = ({ onTranscription, disabled = false }) => {
           style={{ 
             minWidth: '64px', 
             minHeight: '64px',
-            zIndex: 30
+            zIndex: 30,
+            outline: 'none'
           }}
           title={isRecording ? 'Stop recording' : 'Start voice input'}
         >
