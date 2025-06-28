@@ -34,9 +34,17 @@ const AnswerSection = ({ answer, question, onGenerateTTS, audioUrl, autoPlay }) 
   const isAnyAudioPlaying = () => window.isAnyAudioPlaying;
   const setAnyAudioPlaying = (val) => { window.isAnyAudioPlaying = val; };
 
+  // Clean [Cached] text from answer
+  const cleanAnswer = (text) => {
+    if (typeof text === 'string') {
+      return text.replace(/^\[Cached\]\s*/, '');
+    }
+    return text;
+  };
+
   const handleCopyAnswer = async () => {
     try {
-      await navigator.clipboard.writeText(answer);
+      await navigator.clipboard.writeText(cleanAnswer(answer));
       setIsCopied(true);
       setTimeout(() => setIsCopied(false), 2000);
     } catch (error) {
@@ -130,8 +138,9 @@ const AnswerSection = ({ answer, question, onGenerateTTS, audioUrl, autoPlay }) 
   const handleGenerateTTS = async () => {
     setIsGeneratingTTS(true);
     try {
-      const lang = detectLang(answer);
-      const ttsResult = await onGenerateTTS(answer, lang);
+      const cleanedAnswer = cleanAnswer(answer);
+      const lang = detectLang(cleanedAnswer);
+      const ttsResult = await onGenerateTTS(cleanedAnswer, lang);
       if (ttsResult && ttsResult.audio_base64) {
         const audioBlob = new Blob(
           [Uint8Array.from(atob(ttsResult.audio_base64), c => c.charCodeAt(0))],
@@ -192,7 +201,7 @@ const AnswerSection = ({ answer, question, onGenerateTTS, audioUrl, autoPlay }) 
           <span className="block font-semibold text-green-700 mb-1">AI Assistant</span>
           <div className="prose prose-blue max-w-none">
             <div className="text-gray-700 leading-relaxed">
-              <div className="markdown-content" lang={detectLang(answer)}>
+              <div className="markdown-content" lang={detectLang(cleanAnswer(answer))}>
                 <ReactMarkdown 
                   remarkPlugins={[remarkGfm]}
                   components={{
@@ -209,7 +218,7 @@ const AnswerSection = ({ answer, question, onGenerateTTS, audioUrl, autoPlay }) 
                     blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-blue-500 pl-4 italic text-gray-600 my-6" {...props} />,
                   }}
                 >
-                  {answer}
+                  {cleanAnswer(answer)}
                 </ReactMarkdown>
               </div>
             </div>

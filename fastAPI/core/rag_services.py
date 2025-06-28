@@ -229,7 +229,7 @@ def process_scheme_query_with_retry(rag_chain, user_query, max_retries=3, enable
     query_hash = get_query_hash(user_query.lower().strip())
     cached_result = get_cached_result(query_hash)
     if cached_result:
-        result_text = f"[Cached] {cached_result}"
+        result_text = cached_result  # Do NOT prepend [Cached]
         cache_status = "cached"
     else:
         cache_status = "not_cached"
@@ -250,12 +250,10 @@ def process_scheme_query_with_retry(rag_chain, user_query, max_retries=3, enable
                     if isinstance(result, dict):
                         result_text = result.get('result', 'No results found.')
                     elif isinstance(result, tuple) and len(result) > 0:
-                        # If tuple, take first element as string
                         result_text = str(result[0])
                     else:
                         result_text = str(result)
-                
-                # Cache successful result
+                # Cache only the raw answer
                 cache_result(query_hash, result_text)
                 cache_status = "cached"
                 break

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, Form, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, UploadFile, Form, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -15,11 +15,13 @@ from contextlib import asynccontextmanager
 import os
 from groq import Groq
 import asyncio
+import ffmpeg
+from core.transcription import transcribe_audio_whisper, transcribe_audio_robust
 
 # Core services
 from core.rag_services import build_rag_chain_with_model_choice, process_scheme_query_with_retry
 from core.tts_services import generate_audio_response, TTS_AVAILABLE
-from core.transcription import transcribe_audio
+from core.transcription import transcribe_audio, transcribe_audio_google
 from utils.config import load_env_vars, GROQ_API_KEY
 from utils.helpers import check_rate_limit_delay, LANG_CODE_TO_NAME, ALLOWED_TTS_LANGS
 
@@ -211,6 +213,16 @@ def improved_rate_limit_check(session_id: str) -> Optional[float]:
         # Fallback to original logic
         return check_rate_limit_delay()
 
+def convert_webm_to_wav(webm_bytes):
+    input_buffer = io.BytesIO(webm_bytes)
+    out, _ = (
+        ffmpeg
+        .input('pipe:0')
+        .output('pipe:1', format='wav', acodec='pcm_s16le', ac=1, ar='16000')
+        .run(input=input_buffer.read(), capture_stdout=True, capture_stderr=True)
+    )
+    return out
+
 # Enhanced models
 class QueryRequest(BaseModel):
     input_text: str
@@ -369,20 +381,82 @@ async def get_chat_history(session_id: str = Depends(get_session_id)):
 
 @app.post("/tts/")
 async def get_audio(text: str = Form(...), lang_preference: str = Form("auto")):
-    if not TTS_AVAILABLE:
-        return JSONResponse(status_code=501, content={"error": "TTS not available."})
+    """Generate TTS audio from text"""
     try:
-        audio_data, lang_used, cache_hit = generate_audio_response(
-            text=text,
-            lang_preference=lang_preference
-        )
-        return JSONResponse(content={
-            "lang_used": lang_used,
-            "cache_hit": cache_hit,
-            "audio_base64": base64.b64encode(audio_data).decode('utf-8') if audio_data else None
-        })
+        # Check rate limit
+        delay_needed = improved_rate_limit_check("tts")
+        if delay_needed:
+            return JSONResponse(
+                status_code=429,
+                content={"error": f"Rate limited. Please wait {delay_needed:.1f} seconds."}
+            )
+        
+        # Generate audio
+        audio_bytes, lang_used, cache_hit = generate_audio_response(text, lang_preference)
+        
+        if audio_bytes:
+            # Convert to base64 for JSON response
+            audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
+            return {
+                "audio_base64": audio_base64,
+                "lang_used": lang_used,
+                "cache_hit": cache_hit,
+                "text_length": len(text)
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Failed to generate audio")
+            
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error": f"TTS generation failed: {str(e)}"})
+        print(f"TTS Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/transcribe/")
+async def transcribe_audio_endpoint(audio_file: UploadFile = File(...)):
+    """Transcribe uploaded audio file"""
+    try:
+        # Check rate limit
+        delay_needed = improved_rate_limit_check("transcribe")
+        if delay_needed:
+            return JSONResponse(
+                status_code=429,
+                content={"error": f"Rate limited. Please wait {delay_needed:.1f} seconds."}
+            )
+        
+        # Read audio file
+        audio_bytes = await audio_file.read()
+        
+        # Convert webm to wav if needed
+        if audio_file.filename and audio_file.filename.endswith('.webm'):
+            try:
+                audio_bytes = convert_webm_to_wav(audio_bytes)
+            except Exception as e:
+                print(f"Audio conversion error: {e}")
+                return JSONResponse(
+                    status_code=400,
+                    content={"error": f"Failed to convert audio format: {str(e)}"}
+                )
+        
+        # Validate audio file size
+        if len(audio_bytes) < 100:  # Too small to be valid audio
+            return JSONResponse(
+                status_code=400,
+                content={"error": "Audio file is too small or corrupted"}
+            )
+        
+        # Transcribe using Whisper
+        success, transcription = transcribe_audio_robust(audio_bytes)
+        
+        if success and transcription:
+            # Ensure transcription is a string and strip whitespace
+            transcription_text = str(transcription).strip()
+            return {"transcription": transcription_text}
+        else:
+            error_msg = str(transcription) if not success else "Failed to transcribe audio"
+            return JSONResponse(status_code=400, content={"error": error_msg})
+            
+    except Exception as e:
+        print(f"Transcription Error: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 @app.get("/health/")
 async def health_check():
@@ -401,21 +475,6 @@ async def health_check():
         }
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": f"Health check failed: {str(e)}"})
-
-@app.post("/transcribe/")
-async def transcribe_audio_endpoint(
-    audio_file: UploadFile = File(...),
-    groq_client: Groq = Depends(get_groq_client)
-):
-    try:
-        audio_bytes = await audio_file.read()
-        success, result = transcribe_audio(groq_client, audio_bytes)
-        if success:
-            return {"transcription": result}
-        else:
-            return JSONResponse(status_code=400, content={"error": result})
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"error": f"Transcription failed: {str(e)}"})
 
 @app.get("/sessions/")
 async def list_sessions():
@@ -448,66 +507,6 @@ async def clear_session(session_id: str):
             return {"message": f"Session {session_id} cleared (memory only)"}
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
-
-@app.websocket("/ws/transcribe")
-async def websocket_transcribe(websocket: WebSocket):
-    await websocket.accept()
-    audio_bytes = bytearray()
-    groq_client = get_groq_client()
-    partial_task = None
-    stop_partial = False
-    lock = asyncio.Lock()
-    last_partial_sent = b""
-
-    async def send_partial():
-        nonlocal last_partial_sent
-        while not stop_partial:
-            await asyncio.sleep(2)  # every 2 seconds
-            async with lock:
-                if len(audio_bytes) > 16000:  # Only send if enough audio (about 1s at 16kHz)
-                    try:
-                        # Only send if new audio since last partial
-                        if audio_bytes != last_partial_sent:
-                            success, result = transcribe_audio(groq_client, bytes(audio_bytes))
-                            if success:
-                                await websocket.send_text(json.dumps({"partial": result}))
-                                last_partial_sent = bytes(audio_bytes)
-                    except Exception as e:
-                        await websocket.send_text(json.dumps({"error": f"Partial transcription failed: {str(e)}"}))
-                        break
-
-    try:
-        stop_partial = False
-        partial_task = asyncio.create_task(send_partial())
-        while True:
-            data = await websocket.receive_bytes()
-            if data == b"":
-                break
-            async with lock:
-                audio_bytes.extend(data)
-    except WebSocketDisconnect:
-        pass
-    except Exception as e:
-        await websocket.send_text(json.dumps({"error": str(e)}))
-        await websocket.close()
-        stop_partial = True
-        if partial_task:
-            await partial_task
-        return
-    # Final transcription after receiving all audio
-    try:
-        stop_partial = True
-        if partial_task:
-            await partial_task
-        success, result = transcribe_audio(groq_client, bytes(audio_bytes))
-        if success:
-            await websocket.send_text(json.dumps({"final": result}))
-        else:
-            await websocket.send_text(json.dumps({"error": result}))
-    except Exception as e:
-        await websocket.send_text(json.dumps({"error": f"Transcription failed: {str(e)}"}))
-    finally:
-        await websocket.close()
 
 if __name__ == "__main__":
     import uvicorn

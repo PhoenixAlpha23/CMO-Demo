@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Bot, Upload, MessageCircle, Settings, History, Mic, Volume2, X, FileText, File, Loader2 } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Bot, Upload, MessageCircle, Settings, History, Mic, Volume2, X, FileText, Loader2 } from 'lucide-react';
 import ApiClient from './services/ApiClient';
 import FileUploader from './components/FileUploader';
 import QueryInput from './components/QueryInput';
@@ -21,18 +21,16 @@ function App() {
   const [isRagBuilding, setIsRagBuilding] = useState(false);
   const [audioUrl, setAudioUrl] = useState(null); // Add this state at the top with other states
 
-  useEffect(() => {
-    checkApiAvailability();
-  }, []);
-
-  useEffect(() => {
-    if (activeTab !== 'chat') {
-      window.dispatchEvent(new Event('stopAllAudioPlayback'));
-      window.isAnyAudioPlaying = false;
+  const loadChatHistory = useCallback(async () => {
+    try {
+      const history = await apiClient.getChatHistory();
+      setChatHistory(history);
+    } catch (error) {
+      console.error('Failed to load chat history:', error);
     }
-  }, [activeTab]);
+  }, [apiClient]);
 
-  const checkApiAvailability = async () => {
+  const checkApiAvailability = useCallback(async () => {
     try {
       const available = await apiClient.healthCheck();
       setIsApiAvailable(available);
@@ -42,16 +40,18 @@ function App() {
     } catch (error) {
       setIsApiAvailable(false);
     }
-  };
+  }, [apiClient, loadChatHistory]);
 
-  const loadChatHistory = async () => {
-    try {
-      const history = await apiClient.getChatHistory();
-      setChatHistory(history);
-    } catch (error) {
-      console.error('Failed to load chat history:', error);
+  useEffect(() => {
+    checkApiAvailability();
+  }, [checkApiAvailability]);
+
+  useEffect(() => {
+    if (activeTab !== 'chat') {
+      window.dispatchEvent(new Event('stopAllAudioPlayback'));
+      window.isAnyAudioPlaying = false;
     }
-  };
+  }, [activeTab]);
 
   const handleFileUpload = async (pdfFile, txtFile) => {
     setIsRagBuilding(true);
@@ -132,15 +132,6 @@ function App() {
       setAudioUrl(null);
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const handleTranscribeAudio = async (audioBlob) => {
-    try {
-      const result = await apiClient.transcribeAudio(audioBlob);
-      return result.transcription;
-    } catch (error) {
-      throw new Error(`Transcription failed: ${error.message}`);
     }
   };
 
@@ -273,7 +264,6 @@ function App() {
                 <div className="relative">
                   <QueryInput
                     onSubmit={handleQuery}
-                    onTranscribeAudio={handleTranscribeAudio}
                     isLoading={isLoading}
                     enableEnterSubmit={true}
                     isRagBuilding={isRagBuilding}
