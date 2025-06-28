@@ -6,6 +6,7 @@ import requests
 import base64
 import json
 from typing import Optional, Tuple
+import subprocess
 
 # UI module imports (keep your existing UI components)
 from ui.main_panel import render_file_uploaders, render_query_input, render_answer_section, render_chat_history, render_footer
@@ -213,6 +214,20 @@ def get_files_hash(pdf_file, txt_file):
         hasher.update(txt_file.name.encode())
         hasher.update(str(txt_file.size).encode())
     return hasher.hexdigest()
+
+def convert_audio(input_path, output_path):
+    try:
+        result = subprocess.run(
+            ["ffmpeg", "-y", "-i", input_path, output_path],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+    except subprocess.CalledProcessError as e:
+        print(f"[ERROR] ffmpeg error: {e.stderr.decode()}")
+        print(f"[ERROR] Command: {e.cmd}")
+        print(f"[ERROR] Return code: {e.returncode}")
+        raise RuntimeError(f"Audio conversion failed: {e.stderr.decode()}")
 
 def main():
     st.set_page_config(page_title="RAG Agent", layout="wide")

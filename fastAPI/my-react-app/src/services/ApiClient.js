@@ -74,10 +74,10 @@ class ApiClient {
 
   async transcribeAudio(audioBlob) {
     const formData = new FormData();
-    formData.append('audio_file', audioBlob, 'audio.wav');
+    formData.append('audio', audioBlob, 'audio.wav');
 
     try {
-      const response = await this.client.post('/transcribe/', formData, {
+      const response = await this.client.post('/transcribe', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },

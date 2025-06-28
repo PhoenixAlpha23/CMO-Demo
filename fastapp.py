@@ -6,6 +6,7 @@ import time
 import functools
 import io
 import base64
+import ffmpeg
 
 from groq import Groq
 
@@ -126,18 +127,26 @@ async def get_audio(text: str = Form(...), lang_preference: str = Form("auto")):
 async def health_check():
     return {"status": "ok"}
 
-@app.post("/transcribe/")
-async def transcribe_audio_endpoint(audio_file: UploadFile = File(...)):
-    if not GROQ_API_KEY:
-        return JSONResponse(status_code=500, content={"error": "Missing GROQ_API_KEY."})
+def convert_to_wav(audio_bytes):
+    input_buffer = io.BytesIO(audio_bytes)
+    out, _ = (
+        ffmpeg
+        .input('pipe:0')
+        .output('pipe:1', format='wav', acodec='pcm_s16le', ac=1, ar='16000')
+        .run(input=input_buffer.read(), capture_stdout=True, capture_stderr=True)
+    )
+    return out
 
+@app.post("/transcribe")
+async def transcribe_endpoint(audio: UploadFile = File(...)):
     try:
-        audio_bytes = await audio_file.read()
-        whisper_client = Groq(api_key=GROQ_API_KEY)
-        success, result = transcribe_audio(whisper_client, audio_bytes)
-        if success:
-            return {"transcription": result}
-        else:
-            return JSONResponse(status_code=400, content={"error": result})
+        audio_bytes = await audio.read()
+        # Always convert to mono 16kHz WAV
+        wav_bytes = convert_to_wav(audio_bytes)
+        from core.transcription import transcribe_audio_whisper
+        success, transcription = transcribe_audio_whisper(wav_bytes, model_name="large")
+        if not success:
+            return {"error": transcription}
+        return {"transcription": transcription}
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error": f"Transcription failed: {str(e)}"})
+        return {"error": str(e)}
