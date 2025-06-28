@@ -62,7 +62,15 @@ def check_indic_script(text):
         'aala', 'aali', 'jaa', 'dekh', 'aik', 'bol', 'sang', 'sodun', 'sodla',
         'samajh', 'samajhta', 'samajhte', 'mala', 'tula', 'tyala', 'tyachi',
         'tya', 'to', 'ti', 'te', 'mi', 'tu', 'to', 'amhi', 'tumhi', 'tya',
-        'he', 'hi', 'ha', 'ho', 'ka', 'ki', 'ke', 'cha', 'chi', 'che'
+        'he', 'hi', 'ha', 'ho', 'ka', 'ki', 'ke', 'cha', 'chi', 'che',
+        # Additional Marathi words for better detection
+        'sathi', 'samavesh', 'bhankash', 'konte', 'ahet', 'ahe', 'karto',
+        'karte', 'kartat', 'gela', 'geli', 'aala', 'aali', 'jaa', 'dekh',
+        'aik', 'bol', 'sang', 'sodun', 'sodla', 'samajh', 'samajhta',
+        'mala', 'tula', 'tyala', 'tyachi', 'tya', 'to', 'ti', 'te',
+        'mi', 'tu', 'to', 'amhi', 'tumhi', 'tya', 'he', 'hi', 'ha',
+        'ho', 'ka', 'ki', 'ke', 'cha', 'chi', 'che', 'aahe', 'ahet',
+        'karto', 'karte', 'kartat', 'gela', 'geli', 'aala', 'aali'
     ]
     
     # Convert text to lowercase for comparison
@@ -167,7 +175,18 @@ def transcribe_audio_whisper(audio_bytes, model_name="base"):
         model = whisper.load_model(model_name)
         
         # Try transcription with language hints for better Indic language support
-        # First try with Hindi language hint
+        # First try with Marathi language hint (most specific for this case)
+        try:
+            result = model.transcribe(temp_path, language="mr")
+            transcription = str(result.get('text', '')).strip()
+            if transcription and len(transcription.strip()) >= 2:
+                print(f"Transcription with Marathi hint: {transcription}")
+                if validate_language(transcription):
+                    return (True, transcription)
+        except Exception as e:
+            print(f"Marathi transcription failed: {e}")
+        
+        # Try with Hindi language hint
         try:
             result = model.transcribe(temp_path, language="hi")
             transcription = str(result.get('text', '')).strip()
@@ -178,16 +197,16 @@ def transcribe_audio_whisper(audio_bytes, model_name="base"):
         except Exception as e:
             print(f"Hindi transcription failed: {e}")
         
-        # Try with Marathi language hint
+        # Try with Sanskrit language hint (sometimes helps with Indic languages)
         try:
-            result = model.transcribe(temp_path, language="mr")
+            result = model.transcribe(temp_path, language="sa")
             transcription = str(result.get('text', '')).strip()
             if transcription and len(transcription.strip()) >= 2:
-                print(f"Transcription with Marathi hint: {transcription}")
+                print(f"Transcription with Sanskrit hint: {transcription}")
                 if validate_language(transcription):
                     return (True, transcription)
         except Exception as e:
-            print(f"Marathi transcription failed: {e}")
+            print(f"Sanskrit transcription failed: {e}")
         
         # Fallback to auto language detection
         result = model.transcribe(temp_path)
@@ -231,9 +250,11 @@ def transcribe_audio_whisper(audio_bytes, model_name="base"):
 def transcribe_audio_robust(audio_bytes, model_name="base"):
     """
     Robust transcription function that tries multiple approaches.
+    Optimized for Marathi and Indic languages.
     """
     # Try with different models in order of preference for Indic languages
-    models_to_try = ["large-v3", "large-v2", "base", "small", "tiny"]
+    # Large models work better with Indic languages
+    models_to_try = ["large-v3", "large-v2", "medium", "base", "small", "tiny"]
     
     for model in models_to_try:
         print(f"Trying transcription with model: {model}")
@@ -277,7 +298,7 @@ def convert_audio_format(audio_bytes, target_format='wav'):
 def preprocess_audio(audio_bytes):
     """
     Preprocess audio for better transcription quality.
-    This helps with Indic language transcription.
+    This helps with Indic language transcription, especially Marathi.
     """
     try:
         import ffmpeg
@@ -286,6 +307,7 @@ def preprocess_audio(audio_bytes):
         input_buffer = io.BytesIO(audio_bytes)
         
         # Process audio with ffmpeg for better quality
+        # Enhanced settings for Marathi/Hindi speech
         out, _ = (
             ffmpeg
             .input('pipe:0')
@@ -294,7 +316,7 @@ def preprocess_audio(audio_bytes):
                    acodec='pcm_s16le',
                    ac=1,  # mono
                    ar='16000',  # 16kHz sample rate
-                   af='highpass=f=50,lowpass=f=8000,volume=1.5')  # Filter and amplify
+                   af='highpass=f=80,lowpass=f=8000,volume=2.0,compand=0.3|0.3:1|1:-90/-60/-40/-30/-20/-10/-3/0:6:0:-90:0.2')  # Enhanced filters for Indic languages
             .run(input=input_buffer.read(), capture_stdout=True, capture_stderr=True)
         )
         
