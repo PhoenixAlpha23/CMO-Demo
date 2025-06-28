@@ -4,3 +4,4 @@ assets
 core
 requirements.txt
 utils
+fastAPI/my-react-app/yarn.lock
