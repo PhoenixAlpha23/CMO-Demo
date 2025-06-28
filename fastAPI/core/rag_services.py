@@ -151,7 +151,7 @@ Answer:"""
         )
         chain_kwargs = {
             "prompt": custom_prompt,
-            "verbose": True,  # For debugging
+            "verbose": False,  # For debugging
         }
         
         llm = ChatGroq(
