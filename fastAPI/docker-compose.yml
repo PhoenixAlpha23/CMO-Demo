@@ -22,4 +22,5 @@ services:
       - redis
     volumes:
       - .:/app
+      - ./uploads:/app/uploads
     restart: unless-stopped
