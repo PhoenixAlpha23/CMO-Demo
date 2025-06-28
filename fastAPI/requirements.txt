@@ -17,3 +17,5 @@ langid
 # for fastapi
 fastapi
 uvicorn
+# for speech-to-text
+openai-whisper

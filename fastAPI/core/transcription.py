@@ -58,31 +58,78 @@ def transcribe_audio_google(audio_bytes, sample_rate=16000, language_code="en-US
         return (True, transcription)
     return (False, "")
 
-def transcribe_audio_whisper(audio_bytes, model_name="large"):
+def transcribe_audio_whisper(audio_bytes, model_name="base"):
+    """
+    Transcribe audio using OpenAI Whisper with proper error handling.
+    Uses a smaller model by default for faster processing.
+    """
     import whisper
     import tempfile
     import os
+    
+    # Create temporary file
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
         f.write(audio_bytes)
         temp_path = f.name
-    model = whisper.load_model(model_name)
-    audio = whisper.load_audio(temp_path)
-    audio = whisper.pad_or_trim(audio)
-    mel = whisper.log_mel_spectrogram(audio).to(model.device)
-    _, probs = model.detect_language(mel)
-    probs = cast(dict[str, float], probs)
-    detected_lang = max(probs, key=lambda k: probs[k])
-    if detected_lang not in SUPPORTED_LANGUAGES:
-        supported_langs = ", ".join(SUPPORTED_LANGUAGES.values())
-        os.unlink(temp_path)
-        return (
-            False,
-            f"Sorry, I only support {supported_langs}. Please speak in one of these languages."
-        )
-    result = model.transcribe(temp_path)
-    os.unlink(temp_path)
-    if isinstance(result, dict) and 'text' in result:
-        transcription = result['text']
-    else:
-        transcription = ''
-    return True, transcription
+    
+    try:
+        # Load the model (use base model for faster processing)
+        model = whisper.load_model(model_name)
+        
+        # Transcribe directly using Whisper's transcribe method
+        # This handles all the audio preprocessing internally
+        result = model.transcribe(temp_path)
+        
+        # Extract transcription text
+        if isinstance(result, dict) and 'text' in result:
+            transcription = str(result['text']).strip()
+        elif isinstance(result, str):
+            transcription = result.strip()
+        else:
+            transcription = str(result).strip() if result else ''
+        
+        # Check if transcription is empty or too short
+        if not transcription or len(transcription.strip()) < 2:
+            return (False, "No speech detected. Please try speaking more clearly.")
+        
+        # Validate language from transcribed text
+        if not validate_language(transcription):
+            supported_langs = ", ".join(SUPPORTED_LANGUAGES.values())
+            return (
+                False,
+                f"Sorry, I only support {supported_langs}. Please speak in one of these languages."
+            )
+        
+        return (True, transcription)
+        
+    except Exception as e:
+        print(f"Whisper transcription error: {e}")
+        return (False, f"Transcription failed: {str(e)}")
+        
+    finally:
+        # Clean up temporary file
+        try:
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+        except Exception as e:
+            print(f"Error cleaning up temp file: {e}")
+
+def transcribe_audio_robust(audio_bytes, model_name="base"):
+    """
+    Robust transcription function that tries multiple approaches.
+    """
+    # First try with the base model
+    success, transcription = transcribe_audio_whisper(audio_bytes, model_name)
+    
+    if success:
+        return success, transcription
+    
+    # If base model fails, try with tiny model
+    if model_name != "tiny":
+        print("Base model failed, trying tiny model...")
+        success, transcription = transcribe_audio_whisper(audio_bytes, "tiny")
+        if success:
+            return success, transcription
+    
+    # If still fails, return the original error
+    return success, transcription
