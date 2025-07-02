@@ -39,22 +39,30 @@ class RedisManager:
         self._connect()
     
     def _connect(self):
-        self.redis_client = None  # Force Redis to be unavailable for now
+        try:
+            self.redis_client = redis.Redis(
+                host=REDIS_HOST,
+                port=REDIS_PORT,
+                db=REDIS_DB,
+                password=REDIS_PASSWORD,
+                decode_responses=False,  # Keep as bytes for pickle
+                socket_timeout=5,
+                socket_connect_timeout=5,
+                retry_on_timeout=True
+            )
+            # Test connection
+            self.redis_client.ping()
+            print("Redis connected successfully")
+        except Exception as e:
+            print(f"Redis connection failed: {e}")
+            self.redis_client = None
+
+    def is_available(self) -> bool:
+        return self.redis_client is not None
     
     def reconnect(self):
         """Reconnect to Redis if connection is lost."""
         self._connect()
-    
-    def is_available(self) -> bool:
-        if self.redis_client is None:
-            self.reconnect()
-        try:
-            if self.redis_client:
-                self.redis_client.ping()
-                return True
-        except Exception:
-            self.reconnect()
-        return self.redis_client is not None
     
     def set_rag_chain(self, key: str, rag_chain, expire_hours: int = 24):
         """Store RAG chain with expiration"""
@@ -230,6 +238,7 @@ class QueryRequest(BaseModel):
     enhanced_mode: bool = True
     voice_lang_pref: str = "auto"
     session_id: Optional[str] = None
+    model_key: Optional[str] = None  # <-- Add this line
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -315,41 +324,43 @@ async def get_answer(req: QueryRequest):
             return JSONResponse(status_code=400, content={"error": "Empty query input."})
 
         session_id = req.session_id or "default"
-        
+
         # Enhanced rate limiting
         wait_time = improved_rate_limit_check(session_id)
         if wait_time:
             return JSONResponse(status_code=429, content={"message": f"Rate limited. Wait {wait_time:.1f} seconds."})
 
-        # Get appropriate RAG chain (simplified - you might want to pass model_key)
-        # For now, try to get any available chain
+        # Use model_key if provided
         rag_chain = None
-        if redis_manager.is_available() and redis_manager.redis_client is not None:
-            # Try to get the most recent chain (this is simplified)
-            try:
-                keys = redis_manager.redis_client.keys("rag_chain:*")
-                if hasattr(keys, '__await__'):
-                    keys = []
-                if not hasattr(keys, '__getitem__') or not hasattr(keys, '__iter__'):
-                    keys = []
-                if keys:
-                    key0 = keys[0]
-                    if hasattr(key0, 'decode'):
-                        key0 = key0.decode()
-                    rag_chain = redis_manager.get_rag_chain(key0.replace("rag_chain:", ""))
-            except Exception:
-                pass
-        
-        if not rag_chain:
-            # Fallback to memory state
-            rag_chain = state_manager._memory_state.get("rag_chain")
-        
+        if req.model_key:
+            rag_chain = state_manager.get_rag_chain(req.model_key)
+        else:
+            # Fallback: try to get any available chain (existing logic)
+            if redis_manager.is_available() and redis_manager.redis_client is not None:
+                try:
+                    keys = redis_manager.redis_client.keys("rag_chain:*")
+                    if hasattr(keys, '__await__'):
+                        keys = []
+                    if not hasattr(keys, '__getitem__') or not hasattr(keys, '__iter__'):
+                        keys = []
+                    if keys:
+                        key0 = keys[0]
+                        if hasattr(key0, 'decode'):
+                            key0 = key0.decode()
+                        rag_chain = redis_manager.get_rag_chain(key0.replace("rag_chain:", ""))
+                except Exception:
+                    pass
+
+            if not rag_chain:
+                # Fallback to memory state
+                rag_chain = state_manager._memory_state.get("rag_chain")
+
         if not rag_chain:
             return JSONResponse(status_code=400, content={"error": "No RAG system initialized. Please upload files first."})
 
         result = process_scheme_query_with_retry(rag_chain, input_text)
         assistant_reply = result[0] if isinstance(result, tuple) else result or "No response received"
-        
+
         # Store chat message
         message = {
             "user": input_text,
@@ -358,7 +369,7 @@ async def get_answer(req: QueryRequest):
             "timestamp": time.strftime("%H:%M:%S")
         }
         state_manager.add_chat_message(message, session_id)
-        
+
         return {
             "reply": assistant_reply,
             "session_id": session_id,
