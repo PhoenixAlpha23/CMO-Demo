@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { Volume2, VolumeX, Copy, CheckCircle, Loader2, Pause, RotateCcw, Play, Download } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -29,6 +29,7 @@ const AnswerSection = ({ answer, question, onGenerateTTS, audioUrl, autoPlay }) 
   const [audioProgress, setAudioProgress] = useState(0);
   const [audioDuration, setAudioDuration] = useState(0);
   const audioRef = useRef(null);
+  const playedOnce = useRef({});
 
   // Global audio playing flag
   const isAnyAudioPlaying = () => window.isAnyAudioPlaying;
@@ -55,6 +56,10 @@ const AnswerSection = ({ answer, question, onGenerateTTS, audioUrl, autoPlay }) 
   // When audioUrl changes, create a new Audio object
   useEffect(() => {
     if (!audioUrlState) return;
+
+    // Use a unique key for the answer (could be answer text or a hash)
+    const answerKey = cleanAnswer(answer);
+
     // Pause any global audio before starting new one
     if (window.currentlyPlayingAudio && typeof window.currentlyPlayingAudio.pause === 'function') {
       window.currentlyPlayingAudio.pause();
@@ -75,31 +80,34 @@ const AnswerSection = ({ answer, question, onGenerateTTS, audioUrl, autoPlay }) 
     audio.addEventListener('pause', () => setIsPlayingTTS(false));
     audio.addEventListener('play', () => setIsPlayingTTS(true));
 
-    // Try to autoplay as soon as the audio is ready
-    const tryPlay = () => {
-      audio.load();
-      const playPromise = audio.play();
-      if (playPromise !== undefined) {
-        playPromise.catch(() => {
-          // Show a UI hint to the user and retry on interaction
-          if (!window.__audio_autoplay_hint_shown) {
-            alert('🔊 Please click anywhere on the page to enable audio playback (browser autoplay policy).');
-            window.__audio_autoplay_hint_shown = true;
-          }
-          const onUserInteract = () => {
-            audio.play();
-            window.removeEventListener('click', onUserInteract);
-            window.removeEventListener('keydown', onUserInteract);
-          };
-          window.addEventListener('click', onUserInteract);
-          window.addEventListener('keydown', onUserInteract);
-        });
+    // Autoplay only once per answer
+    if (!playedOnce.current[answerKey]) {
+      const tryPlay = () => {
+        audio.load();
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(() => {
+            // Show a UI hint to the user and retry on interaction
+            if (!window.__audio_autoplay_hint_shown) {
+              alert('🔊 Please click anywhere on the page to enable audio playback (browser autoplay policy).');
+              window.__audio_autoplay_hint_shown = true;
+            }
+            const onUserInteract = () => {
+              audio.play();
+              window.removeEventListener('click', onUserInteract);
+              window.removeEventListener('keydown', onUserInteract);
+            };
+            window.addEventListener('click', onUserInteract);
+            window.addEventListener('keydown', onUserInteract);
+          });
+        }
+        playedOnce.current[answerKey] = true; // Mark as played
+      };
+      if (audio.readyState >= 1) {
+        tryPlay();
+      } else {
+        audio.addEventListener('loadedmetadata', tryPlay, { once: true });
       }
-    };
-    if (audio.readyState >= 1) {
-      tryPlay();
-    } else {
-      audio.addEventListener('loadedmetadata', tryPlay, { once: true });
     }
 
     return () => {
@@ -109,7 +117,7 @@ const AnswerSection = ({ answer, question, onGenerateTTS, audioUrl, autoPlay }) 
         window.currentlyPlayingAudio = null;
       }
     };
-  }, [audioUrlState]);
+  }, [audioUrlState, answer]); // <-- add answer as dependency
 
   // Play/Pause handler
   const handlePlayPause = () => {

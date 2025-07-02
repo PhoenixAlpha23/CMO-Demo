@@ -27,6 +27,7 @@ const ChatHistory = ({ chatHistory, onGenerateTTS }) => {
   const [audioDuration, setAudioDuration] = useState({});
   const audioRefs = useRef({});
   const [audioUrls, setAudioUrls] = useState({});
+  const playedOnce = useRef({}); // Add this near your other refs
   // Add autoPlayBlocked ref for each message
   const autoPlayBlocked = useRef({});
 
@@ -85,22 +86,7 @@ const ChatHistory = ({ chatHistory, onGenerateTTS }) => {
       audio.addEventListener('ended', () => setPlayingIndex(null));
       audio.addEventListener('pause', () => setPlayingIndex(null));
       audio.addEventListener('play', () => setPlayingIndex(idx));
-
-      // Try to autoplay as soon as the audio is ready
-      const tryPlay = () => {
-        audio.load(); // Ensure audio is loaded
-        const playPromise = audio.play();
-        if (playPromise !== undefined) {
-          playPromise.catch(() => {
-            // Optionally handle autoplay block here
-          });
-        }
-      };
-      if (audio.readyState >= 1) {
-        tryPlay();
-      } else {
-        audio.addEventListener('loadedmetadata', tryPlay, { once: true });
-      }
+      // Autoplay logic removed: audio will only play on user action
     });
     return () => {
       Object.values(audioRefs.current).forEach(audio => {
