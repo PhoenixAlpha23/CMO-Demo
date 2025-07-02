@@ -11,7 +11,10 @@ const QueryInput = ({
   assistantReply,
 }) => {
   const [inputText, setInputText] = useState('');
+  const [isRecording, setIsRecording] = useState(false);
   const textareaRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const socketRef = useRef(null);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -50,8 +53,10 @@ const QueryInput = ({
 
       {/* Microphone button */}
       <div className="w-full flex justify-center mb-2">
-        <MicrophoneButton 
-          onTranscription={handleTranscription}
+        <MicrophoneButton
+          isRecording={isRecording}
+          setIsRecording={setIsRecording}
+          onTranscription={setInputText}
           disabled={isLoading || isRagBuilding}
         />
       </div>
