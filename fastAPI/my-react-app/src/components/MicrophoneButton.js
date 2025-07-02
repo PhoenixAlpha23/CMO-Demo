@@ -1,6 +1,13 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 
-const MicrophoneButton = ({ isRecording, setIsRecording, onTranscription, disabled, language = 'en-US' }) => {
+const languageOptions = [
+  { label: 'English', code: 'en-US' },
+  { label: 'Hindi', code: 'hi-IN' },
+  { label: 'Marathi', code: 'mr-IN' },
+];
+
+const MicrophoneButton = ({ isRecording, setIsRecording, onTranscription, disabled }) => {
+  const [selectedLanguage, setSelectedLanguage] = useState('en-US');
   const recognitionRef = useRef(null);
 
   const handleMicClick = () => {
@@ -18,7 +25,7 @@ const MicrophoneButton = ({ isRecording, setIsRecording, onTranscription, disabl
       return;
     }
     const recognition = new SpeechRecognition();
-    recognition.lang = language; // Use selected language prop
+    recognition.lang = selectedLanguage; // Use selected language
     recognition.interimResults = true;
     recognition.continuous = true;
     recognitionRef.current = recognition;
@@ -44,20 +51,40 @@ const MicrophoneButton = ({ isRecording, setIsRecording, onTranscription, disabl
   }, []);
 
   return (
-    <button
-      type="button"
-      onClick={handleMicClick}
-      disabled={disabled}
-      className={`p-6 rounded-full flex items-center justify-center transition-all duration-200
-        ${isRecording ? 'bg-red-500 animate-pulse shadow-2xl scale-125' : 'bg-blue-500'}
-        text-white`}
-      style={{ fontSize: '2.5rem', width: '80px', height: '80px' }}
-      aria-label={isRecording ? 'Stop Recording' : 'Start Recording'}
-    >
-      <span role="img" aria-label="microphone">
-        🎤
-      </span>
-    </button>
+    <div>
+      <select
+        value={selectedLanguage}
+        onChange={e => setSelectedLanguage(e.target.value)}
+        disabled={isRecording}
+        style={{
+          marginBottom: '1rem',
+          padding: '0.5rem',
+          fontSize: '1rem',
+          background: 'transparent', // Make background transparent
+          border: 'none', // Remove border
+          color: '#222', // Optional: ensure text is visible
+        }}
+        aria-label="Select language"
+      >
+        {languageOptions.map(opt => (
+          <option key={opt.code} value={opt.code}>{opt.label}</option>
+        ))}
+      </select>
+      <button
+        type="button"
+        onClick={handleMicClick}
+        disabled={disabled}
+        className={`p-6 rounded-full flex items-center justify-center transition-all duration-200
+          ${isRecording ? 'bg-red-500 animate-pulse scale-125' : 'bg-blue-500'}
+          text-white`}
+        style={{ fontSize: '2.5rem', width: '80px', height: '80px' }}
+        aria-label={isRecording ? 'Stop Recording' : 'Start Recording'}
+      >
+        <span role="img" aria-label="microphone">
+          🎤
+        </span>
+      </button>
+    </div>
   );
 };
 
