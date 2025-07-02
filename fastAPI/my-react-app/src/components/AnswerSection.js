@@ -151,6 +151,16 @@ const AnswerSection = ({ answer, question, onGenerateTTS, audioUrl, autoPlay }) 
   const handleGenerateTTS = async (playAfter = false) => {
     setIsGeneratingTTS(true);
     try {
+      // Always pause and clean up previous audio before generating new
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+      if (audioUrlState) {
+        URL.revokeObjectURL(audioUrlState);
+        setAudioUrl(null);
+      }
+
       const cleanedAnswer = cleanAnswer(answer);
       const lang = detectLang(cleanedAnswer);
       const ttsResult = await onGenerateTTS(cleanedAnswer, lang);
@@ -162,7 +172,6 @@ const AnswerSection = ({ answer, question, onGenerateTTS, audioUrl, autoPlay }) 
         const url = URL.createObjectURL(audioBlob);
         setAudioUrl(url);
         if (playAfter) {
-          // Wait for audioRef to update, then play
           setTimeout(() => {
             if (audioRef.current) audioRef.current.play();
           }, 100);
