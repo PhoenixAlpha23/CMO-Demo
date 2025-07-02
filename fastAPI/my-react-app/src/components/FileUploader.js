@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Upload, File, FileText, X, CheckCircle, Loader2 } from 'lucide-react';
+import { Upload, File, FileText, X, CheckCircle, Loader2, Plus } from 'lucide-react';
 
 const FileUploader = ({ onUpload, isLoading, uploadedFiles }) => {
   const [dragActive, setDragActive] = useState(false);
@@ -88,36 +88,50 @@ const FileUploader = ({ onUpload, isLoading, uploadedFiles }) => {
   }, [files.pdf, files.txt]);
 
   return (
-    <div className="space-y-6">
-      {/* Drag and Drop Area */}
+    <div className="flex flex-col items-center justify-center w-full">
+      {/* Compact Upload Bar */}
       <div
-        className={`border-2 border-dashed rounded-lg p-8 text-center transition-all ${
+        className={`flex items-center gap-2 bg-white border border-gray-300 rounded-2xl shadow-sm px-4 py-2 max-w-lg w-full transition-all ${
           dragActive
             ? 'border-blue-500 bg-blue-50'
-            : 'border-gray-300 hover:border-blue-400 hover:bg-gray-50'
+            : 'hover:border-blue-400 hover:bg-gray-50'
         }`}
         onDragEnter={handleDrag}
         onDragLeave={handleDrag}
         onDragOver={handleDrag}
         onDrop={handleDrop}
         onClick={() => fileInputRef.current?.click()}
-        style={{ cursor: 'pointer' }}
+        style={{ cursor: 'pointer', minHeight: 48 }}
       >
-        <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-        <p className="text-lg font-medium text-gray-700 mb-2">
-          Drag and drop your PDF or TXT files here
-        </p>
-        <p className="text-gray-500 mb-4">or click to select files</p>
-        <div className="flex justify-center space-x-4">
+        <Upload className="w-5 h-5 text-gray-400" />
+        <span className="flex-1 text-sm text-gray-600 text-left">
+          {files.pdf?.name || files.txt?.name
+            ? `${files.pdf?.name || ''} ${files.txt?.name || ''}`.trim()
+            : 'Select or drag PDF/TXT file'}
+        </span>
+        <button
+          type="button"
+          onClick={e => {
+            e.stopPropagation();
+            fileInputRef.current?.click();
+          }}
+          className="bg-blue-600 text-white px-2 py-1 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-1 text-xs"
+          title="Add file"
+        >
+          <Plus className="w-4 h-4" />
+        </button>
+        {(files.pdf || files.txt) && (
           <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
+            onClick={e => {
+              e.stopPropagation();
+              setFiles({ pdf: null, txt: null });
+            }}
+            className="ml-2 text-gray-400 hover:text-red-500"
+            title="Remove file"
           >
-            <FileText className="w-4 h-4" />
-            <span>Select PDF/TXT</span>
+            <X className="w-4 h-4" />
           </button>
-        </div>
+        )}
       </div>
 
       {/* Hidden File Input */}
@@ -130,65 +144,19 @@ const FileUploader = ({ onUpload, isLoading, uploadedFiles }) => {
         onChange={handleFileSelect}
       />
 
-      {/* Selected Files */}
-      {(files.pdf || files.txt) && (
-        <div className="space-y-3">
-          <h3 className="font-medium text-gray-700">Selected Files:</h3>
-          {files.pdf && (
-            <div className="flex items-center justify-between p-3 bg-red-50 rounded-lg border border-red-200">
-              <div className="flex items-center space-x-3">
-                <FileText className="w-5 h-5 text-red-600" />
-                <span className="text-sm font-medium text-gray-700">{files.pdf.name}</span>
-                <span className="text-xs text-gray-500">
-                  ({(files.pdf.size / 1024 / 1024).toFixed(2)} MB)
-                </span>
-              </div>
-              <button
-                onClick={() => removeFile('pdf')}
-                className="text-red-600 hover:text-red-800"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          )}
-          {files.txt && (
-            <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg border border-green-200">
-              <div className="flex items-center space-x-3">
-                <File className="w-5 h-5 text-green-600" />
-                <span className="text-sm font-medium text-gray-700">{files.txt.name}</span>
-                <span className="text-xs text-gray-500">
-                  ({(files.txt.size / 1024).toFixed(2)} KB)
-                </span>
-              </div>
-              <button
-                onClick={() => removeFile('txt')}
-                className="text-green-600 hover:text-green-800"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-
       {/* Upload Status */}
       {uploadedFiles.pdf || uploadedFiles.txt ? (
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-          <div className="flex items-center space-x-2">
-            <CheckCircle className="w-5 h-5 text-green-600" />
-            <span className="font-medium text-green-800">AI RAG System Initialized Successfully!</span>
-          </div>
-          <p className="text-sm text-green-600 mt-1">
-            You can now proceed to the Chat tab to start asking questions.
-          </p>
+        <div className="bg-green-50 border border-green-200 rounded-lg p-2 mt-2 w-full max-w-lg text-xs flex items-center gap-2">
+          <CheckCircle className="w-4 h-4 text-green-600" />
+          <span className="font-medium text-green-800">AI RAG System Initialized Successfully!</span>
         </div>
       ) : null}
 
       {/* Loading icon during AI initialization */}
       {isInitializing && (
-        <div className="flex items-center justify-center mt-4 text-blue-600 text-lg font-semibold">
-          <Loader2 className="w-6 h-6 animate-spin mr-2" />
-          <span>AI RAG System Initializing, please wait...</span>
+        <div className="flex items-center justify-center mt-2 text-blue-600 text-xs font-semibold w-full max-w-lg">
+          <Loader2 className="w-4 h-4 animate-spin mr-2" />
+          <span>AI RAG System Initializing...</span>
         </div>
       )}
     </div>

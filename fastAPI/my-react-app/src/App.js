@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Bot, Upload, MessageCircle, Settings, History, Mic, Volume2, X, FileText, Loader2 } from 'lucide-react';
+import { X, Loader2 } from 'lucide-react';
 import ApiClient from './services/ApiClient';
 import FileUploader from './components/FileUploader';
 import QueryInput from './components/QueryInput';
 import ChatHistory from './components/ChatHistory';
 import AnswerSection from './components/AnswerSection';
 import StatusBar from './components/StatusBar';
+import SidePanel from './components/SidePanel';
 
 function App() {
   const [apiClient] = useState(new ApiClient());
@@ -14,12 +15,14 @@ function App() {
   const [chatHistory, setChatHistory] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [currentAnswer, setCurrentAnswer] = useState('');
-  const [currentQuestion, setCurrentQuestion] = useState(''); // <-- Add state for current question
+  const [currentQuestion, setCurrentQuestion] = useState('');
   const [uploadedFiles, setUploadedFiles] = useState({ pdf: null, txt: null });
   const [activeTab, setActiveTab] = useState('upload');
   const [langWarning, setLangWarning] = useState('');
   const [isRagBuilding, setIsRagBuilding] = useState(false);
-  const [audioUrl, setAudioUrl] = useState(null); // Add this state at the top with other states
+  const [audioUrl, setAudioUrl] = useState(null);
+  const [modelKey, setModelKey] = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const loadChatHistory = useCallback(async () => {
     try {
@@ -60,8 +63,7 @@ function App() {
       setUploadedFiles({ pdf: pdfFile, txt: txtFile });
       setRagInitialized(true);
       setActiveTab('chat');
-      // After upload, call your backend to build RAG system
-      // await buildRagSystem(files); // your function
+      setModelKey(result.model_key);
       return { success: true, message: result.message };
     } catch (error) {
       return { success: false, message: error.message };
@@ -90,25 +92,25 @@ function App() {
     if (!inputText.trim()) return;
     // Language check
     const lang = detectLanguage(inputText);
+    setCurrentQuestion(inputText); // Always set the question first!
     if (lang === 'other') {
       setLangWarning('⚠️ Please use only Marathi, Hindi, or English for your questions.');
+      setCurrentAnswer('');
       return;
     } else {
       setLangWarning('');
     }
     setIsLoading(true);
     try {
-      // Start both requests in parallel
-      const textPromise = apiClient.query(inputText);
-      const ttsPromise = apiClient.generateTTS(inputText); // or use textPromise's reply if needed
+      const textPromise = apiClient.query(inputText, modelKey);
+      const ttsPromise = apiClient.generateTTS(inputText);
       const [result, ttsResult] = await Promise.all([textPromise, ttsPromise]);
       setCurrentAnswer(result.reply);
-      setCurrentQuestion(inputText);
 
       // Prepare audio
       if (ttsResult && ttsResult.audio_base64) {
         if (audioUrl) {
-          URL.revokeObjectURL(audioUrl); // Revoke previous URL
+          URL.revokeObjectURL(audioUrl);
         }
         const audioBlob = new Blob(
           [Uint8Array.from(atob(ttsResult.audio_base64), c => c.charCodeAt(0))],
@@ -130,6 +132,7 @@ function App() {
     } catch (error) {
       setCurrentAnswer(`Error: ${error.message}`);
       setAudioUrl(null);
+      setCurrentQuestion(inputText);
     } finally {
       setIsLoading(false);
     }
@@ -177,145 +180,149 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
-      {/* Header */}
-      <header className="bg-white/80 backdrop-blur-md border-b border-white/20 relative">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative">
-          <div className="absolute right-8 top-8">
-            <StatusBar isApiAvailable={isApiAvailable} ragInitialized={ragInitialized} />
-          </div>
-          
-          {/* Header Content */}
-          <div className="flex items-center justify-between h-32">
-            {/* Header Buttons - Left Side */}
-            {(ragInitialized && (activeTab === 'chat' || activeTab === 'history')) && (
-              <div className="flex items-center space-x-4">
-                <button
-                  onClick={() => setActiveTab('chat')}
-                  disabled={!ragInitialized}
-                  className={`p-3 rounded-full transition-all ${
-                    activeTab === 'chat' && ragInitialized
-                      ? 'bg-blue-600 text-white shadow-lg'
-                      : ragInitialized
-                      ? 'text-gray-600 hover:text-blue-600 hover:bg-white/50'
-                      : 'text-gray-400 cursor-not-allowed'
-                  }`}
-                  title="Chat"
-                >
-                  <MessageCircle className="w-6 h-6" />
-                </button>
-                <button
-                  onClick={() => setActiveTab('history')}
-                  disabled={!ragInitialized}
-                  className={`p-3 rounded-full transition-all ${
-                    activeTab === 'history' && ragInitialized
-                      ? 'bg-blue-600 text-white shadow-lg'
-                      : ragInitialized
-                      ? 'text-gray-600 hover:text-blue-600 hover:bg-white/50'
-                      : 'text-gray-400 cursor-not-allowed'
-                  }`}
-                  title="History"
-                >
-                  <History className="w-6 h-6" />
-                </button>
-              </div>
-            )}
-            
-            {/* Logo and Title - Center */}
-            <div className="flex items-center space-x-4 absolute left-1/2 transform -translate-x-1/2">
-              <img
-                src="/cmrf-logo-removebg-preview.png"
-                alt="CMRF Logo"
-                className="w-24 h-24 rounded-full object-cover"
-              />
-              <h1 className="text-5xl font-extrabold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-                CMRF AI Agent
-              </h1>
-            </div>
-            
-            {/* Empty div for balance */}
-            <div className="w-32"></div>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex flex-row">
+      {/* Sidebar (always rendered, width changes) */}
+      <div
+        className={`transition-all duration-300 ease-in-out h-screen ${
+          sidebarOpen ? 'w-[64px] min-w-[64px]' : 'w-0 min-w-0'
+        }`}
+        style={{ overflow: 'hidden', position: 'sticky', top: 0, left: 0, zIndex: 30 }}
+      >
+        <SidePanel
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          ragInitialized={ragInitialized}
+          sidebarOpen={sidebarOpen}
+          setSidebarOpen={setSidebarOpen}
+        />
+      </div>
+
+      {/* Hamburger button, only when sidebar is closed */}
+      {!sidebarOpen && (
+        <button
+          className="fixed top-4 left-4 z-50 bg-white border border-gray-300 rounded-full shadow p-2 hover:bg-blue-100 transition-all"
+          onClick={() => setSidebarOpen(true)}
+          title="Open sidebar"
+          style={{
+            width: 40,
+            height: 40,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <svg width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2">
+            <line x1="5" y1="7" x2="19" y2="7" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+            <line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+            <line x1="5" y1="17" x2="19" y2="17" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+          </svg>
+        </button>
+      )}
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Tab Content */}
-        <div className="space-y-8">
-          {activeTab === 'upload' && (
-            <div className="bg-white/60 backdrop-blur-sm rounded-xl shadow-lg p-8">
-              <div className="text-center mb-8">
-                <h2 className="text-3xl font-bold text-gray-800 mb-2">📄कृपया योजनेचे तपशील फाइल अपलोड करा</h2>
-                <p className="text-gray-600">Upload PDF or TXT files to initialize the AI system</p>
-              </div>
-              <FileUploader
-                onUpload={handleFileUpload}
-                isLoading={isLoading}
-                uploadedFiles={uploadedFiles}
-              />
+      <div className="flex-1 flex flex-col transition-all duration-300 ease-in-out">
+        {/* Header */}
+        <header className="bg-white/80 backdrop-blur-md border-b border-white/20 relative">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative">
+            <div className="absolute right-8 top-8">
+              <StatusBar isApiAvailable={isApiAvailable} ragInitialized={ragInitialized} />
             </div>
-          )}
-
-          {activeTab === 'chat' && ragInitialized && (
-            <div className="space-y-6">
-              {/* Query Input */}
-              <div className="bg-white/60 backdrop-blur-sm rounded-xl shadow-lg p-6">
-                <div className="relative">
-                  <QueryInput
-                    onSubmit={handleQuery}
-                    isLoading={isLoading}
-                    enableEnterSubmit={true}
-                    isRagBuilding={isRagBuilding}
-                  />
-                  {langWarning && (
-                    <span className="absolute right-0 top-0 mt-2 mr-2 text-xs text-red-600 font-medium">
-                      {langWarning}
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* Current Answer */}
-              {currentAnswer && (
-                <AnswerSection
-                  answer={currentAnswer}
-                  question={currentQuestion}
-                  onGenerateTTS={handleGenerateTTS}
-                  audioUrl={audioUrl}
-                  autoPlay={true}
+            {/* Header Content */}
+            <div className="flex items-center justify-between h-32">
+              {/* Logo and Title - Center */}
+              <div className="flex items-center space-x-4 absolute left-1/2 transform -translate-x-1/2">
+                <img
+                  src="/cmrf-logo-removebg-preview.png"
+                  alt="CMRF Logo"
+                  className="w-24 h-24 rounded-full object-cover"
                 />
-              )}
+                <h1 className="text-5xl font-extrabold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                  CMRF AI Agent
+                </h1>
+              </div>
+              {/* Empty div for balance */}
+              <div className="w-32"></div>
             </div>
-          )}
-
-          {activeTab === 'history' && ragInitialized && (
-            <div className="bg-white/60 backdrop-blur-sm rounded-xl shadow-lg p-6">
-              <ChatHistory
-                chatHistory={chatHistory}
-                onGenerateTTS={handleGenerateTTS}
-              />
-            </div>
-          )}
-        </div>
-      </main>
-
-      {/* Footer */}
-      <footer className="bg-white/80 backdrop-blur-md border-t border-white/20 mt-16">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="text-center">
-            <p className="text-gray-600">
-              Powered by <span className="font-semibold text-blue-600">CMRF AI Agent</span>
-            </p>
-            <p className="text-sm text-gray-500 mt-2">
-               Features: AI RAG System & 📝 TTS 🗣️ STT
-            </p>
           </div>
-        </div>
-      </footer>
+        </header>
+
+        {/* Main Content */}
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full">
+          {/* Tab Content */}
+          <div className="space-y-8">
+            {activeTab === 'upload' && (
+              <div className="bg-white/60 backdrop-blur-sm rounded-xl shadow-lg p-8">
+                <div className="text-center mb-8">
+                  <h2 className="text-3xl font-bold text-gray-800 mb-2">📄कृपया योजनेचे तपशील फाइल अपलोड करा</h2>
+                  <p className="text-gray-600">Upload PDF or TXT files to initialize the AI system</p>
+                </div>
+                <FileUploader
+                  onUpload={handleFileUpload}
+                  isLoading={isLoading}
+                  uploadedFiles={uploadedFiles}
+                />
+              </div>
+            )}
+
+            {activeTab === 'chat' && ragInitialized && (
+              <div className="space-y-6">
+                {/* Query Input */}
+                <div className="bg-white/60 backdrop-blur-sm rounded-xl shadow-lg p-6">
+                  <div className="relative">
+                    <QueryInput
+                      onSubmit={handleQuery}
+                      isLoading={isLoading}
+                      enableEnterSubmit={true}
+                      isRagBuilding={isRagBuilding}
+                    />
+                    {langWarning && (
+                      <span className="absolute right-0 top-0 mt-2 mr-2 text-xs text-red-600 font-medium">
+                        {langWarning}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Current Answer */}
+                {currentAnswer && (
+                  <AnswerSection
+                    answer={currentAnswer}
+                    question={currentQuestion}
+                    onGenerateTTS={handleGenerateTTS}
+                    audioUrl={audioUrl}
+                    autoPlay={true}
+                  />
+                )}
+              </div>
+            )}
+
+            {activeTab === 'history' && ragInitialized && (
+              <div className="bg-white/60 backdrop-blur-sm rounded-xl shadow-lg p-6">
+                <ChatHistory
+                  chatHistory={chatHistory}
+                  onGenerateTTS={handleGenerateTTS}
+                />
+              </div>
+            )}
+          </div>
+        </main>
+
+        {/* Footer */}
+        <footer className="bg-white/80 backdrop-blur-md border-t border-white/20 mt-16">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <div className="text-center">
+              <p className="text-gray-600">
+                Powered by <span className="font-semibold text-blue-600">CMRF AI Agent</span>
+              </p>
+              <p className="text-sm text-gray-500 mt-2">
+               Features: AI RAG System & 📝 TTS 🗣️ STT
+              </p>
+            </div>
+          </div>
+        </footer>
+      </div>
     </div>
   );
 }
-
 
 export default App;
