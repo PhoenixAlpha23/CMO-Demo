@@ -34,13 +34,13 @@ const AnswerSection = ({ answer, question, onGenerateTTS, audioUrl, autoPlay }) 
   const isAnyAudioPlaying = () => window.isAnyAudioPlaying;
   const setAnyAudioPlaying = (val) => { window.isAnyAudioPlaying = val; };
 
-  // Clean [Cached] text from answer
-  const cleanAnswer = (text) => {
+  // Clean [Cached] text from answer (copy from ChatHistory)
+  function cleanAnswer(text) {
     if (typeof text === 'string') {
       return text.replace(/^\[Cached\]\s*/, '');
     }
     return text;
-  };
+  }
 
   const handleCopyAnswer = async () => {
     try {
@@ -134,8 +134,8 @@ const AnswerSection = ({ answer, question, onGenerateTTS, audioUrl, autoPlay }) 
     if (isPlayingTTS) audio.play();
   };
 
-  // Generate TTS and set audioUrl
-  const handleGenerateTTS = async () => {
+  // Generate TTS and set audioUrl, then play immediately if autoPlay or user requested
+  const handleGenerateTTS = async (playAfter = false) => {
     setIsGeneratingTTS(true);
     try {
       const cleanedAnswer = cleanAnswer(answer);
@@ -148,9 +148,12 @@ const AnswerSection = ({ answer, question, onGenerateTTS, audioUrl, autoPlay }) 
         );
         const url = URL.createObjectURL(audioBlob);
         setAudioUrl(url);
-        setTimeout(() => {
-          if (audioRef.current) audioRef.current.play();
-        }, 100);
+        if (playAfter) {
+          // Wait for audioRef to update, then play
+          setTimeout(() => {
+            if (audioRef.current) audioRef.current.play();
+          }, 100);
+        }
       }
     } catch (error) {
       console.error('TTS generation failed:', error);
@@ -177,7 +180,7 @@ const AnswerSection = ({ answer, question, onGenerateTTS, audioUrl, autoPlay }) 
   // Auto-generate and play TTS when answer changes and autoPlay is true
   useEffect(() => {
     if (autoPlay && answer && !audioUrlState && !isGeneratingTTS) {
-      handleGenerateTTS();
+      handleGenerateTTS(true); // Pass true to play after generating
     }
     // eslint-disable-next-line
   }, [answer, autoPlay]);
@@ -227,7 +230,7 @@ const AnswerSection = ({ answer, question, onGenerateTTS, audioUrl, autoPlay }) 
           <div className="flex flex-col space-y-1 mt-2">
             <div className="flex items-center space-x-2">
               <button
-                onClick={audioUrlState ? handlePlayPause : handleGenerateTTS}
+                onClick={audioUrlState ? handlePlayPause : () => handleGenerateTTS(true)}
                 disabled={isGeneratingTTS}
                 className="p-2 rounded-lg bg-green-100 text-green-600 hover:bg-green-200 transition-colors disabled:opacity-50"
                 title={isPlayingTTS ? 'Pause Audio' : 'Play Audio'}
