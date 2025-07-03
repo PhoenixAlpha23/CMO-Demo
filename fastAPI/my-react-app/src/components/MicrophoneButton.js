@@ -25,7 +25,7 @@ const MicrophoneButton = ({ isRecording, setIsRecording, onTranscription, disabl
       return;
     }
     const recognition = new SpeechRecognition();
-    recognition.lang = selectedLanguage; // Use selected language
+    recognition.lang = selectedLanguage;
     recognition.interimResults = true;
     recognition.continuous = true;
     recognitionRef.current = recognition;
@@ -60,9 +60,9 @@ const MicrophoneButton = ({ isRecording, setIsRecording, onTranscription, disabl
           marginBottom: '1rem',
           padding: '0.5rem',
           fontSize: '1rem',
-          background: 'transparent', // Make background transparent
-          border: 'none', // Remove border
-          color: '#222', // Optional: ensure text is visible
+          background: 'transparent',
+          border: 'none',
+          color: '#222',
         }}
         aria-label="Select language"
       >
