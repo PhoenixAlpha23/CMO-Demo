@@ -28,7 +28,7 @@ const SidePanel = ({ activeTab, setActiveTab, ragInitialized, sidebarOpen, setSi
         </button>
       )}
 
-      <div className="flex flex-col items-center mt-16 space-y-2">
+      <div className="flex flex-col items-center mt-16 space-y-2 px-0.5">
         <button
           className={`flex flex-col items-center w-full mb-2 p-4 rounded-xl transition-all
             ${activeTab === 'upload'

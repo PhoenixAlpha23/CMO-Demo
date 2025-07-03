@@ -254,7 +254,7 @@ function App() {
               <div className="flex items-center justify-center flex-1">
                 <div className="bg-white/60 backdrop-blur-sm rounded-2xl shadow-xl p-10 w-full max-w-3xl">
                   <div className="text-center mb-8">
-                    <h2 className="text-3xl font-extrabold text-gray-800 mb-4 flex items-center justify-center gap-3">
+                    <h2 className="text-4xl font-extrabold text-gray-800 mb-4 flex items-center justify-center gap-3">
                       <span role="img" aria-label="file">📄</span>
                       कृपया योजनेचे तपशील फाइल अपलोड करा
                     </h2>
