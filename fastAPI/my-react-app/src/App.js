@@ -23,6 +23,7 @@ function App() {
   const [audioUrl, setAudioUrl] = useState(null);
   const [modelKey, setModelKey] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [shouldAutoPlay, setShouldAutoPlay] = useState(false);
 
   const loadChatHistory = useCallback(async () => {
     try {
@@ -106,6 +107,7 @@ function App() {
       const ttsPromise = apiClient.generateTTS(inputText);
       const [result, ttsResult] = await Promise.all([textPromise, ttsPromise]);
       setCurrentAnswer(result.reply);
+      setShouldAutoPlay(true); // <-- Enable autoPlay only after new answer
 
       // Prepare audio
       if (ttsResult && ttsResult.audio_base64) {
@@ -147,6 +149,13 @@ function App() {
       return null;
     }
   };
+
+  // Reset shouldAutoPlay after it is triggered
+  useEffect(() => {
+    if (shouldAutoPlay) {
+      setShouldAutoPlay(false);
+    }
+  }, [shouldAutoPlay]);
 
   if (isApiAvailable === null) {
     return (
@@ -297,7 +306,7 @@ function App() {
                     question={currentQuestion}
                     onGenerateTTS={handleGenerateTTS}
                     audioUrl={audioUrl}
-                    autoPlay={true}
+                    autoPlay={shouldAutoPlay}
                   />
                 )}
               </div>
