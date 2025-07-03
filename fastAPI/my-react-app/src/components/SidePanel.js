@@ -30,7 +30,7 @@ const SidePanel = ({ activeTab, setActiveTab, ragInitialized, sidebarOpen, setSi
 
       <div className="flex flex-col items-center mt-16 space-y-2">
         <button
-          className={`flex flex-col items-center w-full mb-2 p-2 rounded-lg transition-all
+          className={`flex flex-col items-center w-full mb-2 p-4 rounded-xl transition-all
             ${activeTab === 'upload'
               ? 'bg-blue-600 text-white shadow mx-2'
               : 'text-gray-600 hover:bg-blue-100'}
@@ -38,10 +38,10 @@ const SidePanel = ({ activeTab, setActiveTab, ragInitialized, sidebarOpen, setSi
           onClick={() => setActiveTab('upload')}
           title="Home"
         >
-          <Home className="w-5 h-5" />
+          <Home className="w-7 h-7" />
         </button>
         <button
-          className={`flex flex-col items-center w-full mb-2 p-2 rounded-lg transition-all
+          className={`flex flex-col items-center w-full mb-2 p-4 rounded-xl transition-all
             ${activeTab === 'chat' && ragInitialized
               ? 'bg-blue-600 text-white shadow mx-2'
               : ragInitialized
@@ -52,10 +52,10 @@ const SidePanel = ({ activeTab, setActiveTab, ragInitialized, sidebarOpen, setSi
           disabled={!ragInitialized}
           title="Chat"
         >
-          <MessageCircle className="w-5 h-5" />
+          <MessageCircle className="w-7 h-7" />
         </button>
         <button
-          className={`flex flex-col items-center w-full p-2 rounded-lg transition-all
+          className={`flex flex-col items-center w-full p-4 rounded-xl transition-all
             ${activeTab === 'history' && ragInitialized
               ? 'bg-blue-600 text-white shadow mx-2'
               : ragInitialized
@@ -66,7 +66,7 @@ const SidePanel = ({ activeTab, setActiveTab, ragInitialized, sidebarOpen, setSi
           disabled={!ragInitialized}
           title="History"
         >
-          <History className="w-5 h-5" />
+          <History className="w-7 h-7" />
         </button>
       </div>
     </nav>

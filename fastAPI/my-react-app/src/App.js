@@ -234,9 +234,9 @@ function App() {
                 <img
                   src="/cmrf-logo-removebg-preview.png"
                   alt="CMRF Logo"
-                  className="w-24 h-24 rounded-full object-cover"
+                  className="w-32 h-32 rounded-full object-cover"
                 />
-                <h1 className="text-5xl font-extrabold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                <h1 className="text-6xl font-extrabold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
                   CMRF AI Agent
                 </h1>
               </div>
@@ -247,20 +247,27 @@ function App() {
         </header>
 
         {/* Main Content */}
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full">
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 flex flex-col w-full">
           {/* Tab Content */}
-          <div className="space-y-8">
+          <div className="space-y-8 flex-1 flex flex-col justify-center">
             {activeTab === 'upload' && (
-              <div className="bg-white/60 backdrop-blur-sm rounded-xl shadow-lg p-8">
-                <div className="text-center mb-8">
-                  <h2 className="text-3xl font-bold text-gray-800 mb-2">📄कृपया योजनेचे तपशील फाइल अपलोड करा</h2>
-                  <p className="text-gray-600">Upload PDF or TXT files to initialize the AI system</p>
+              <div className="flex items-center justify-center flex-1">
+                <div className="bg-white/60 backdrop-blur-sm rounded-2xl shadow-xl p-10 w-full max-w-3xl">
+                  <div className="text-center mb-8">
+                    <h2 className="text-3xl font-extrabold text-gray-800 mb-4 flex items-center justify-center gap-3">
+                      <span role="img" aria-label="file">📄</span>
+                      कृपया योजनेचे तपशील फाइल अपलोड करा
+                    </h2>
+                    <p className="text-lg text-gray-700">
+                      Upload PDF or TXT files to initialize the AI system
+                    </p>
+                  </div>
+                  <FileUploader
+                    onUpload={handleFileUpload}
+                    isLoading={isLoading}
+                    uploadedFiles={uploadedFiles}
+                  />
                 </div>
-                <FileUploader
-                  onUpload={handleFileUpload}
-                  isLoading={isLoading}
-                  uploadedFiles={uploadedFiles}
-                />
               </div>
             )}
 
@@ -315,7 +322,7 @@ function App() {
                 Powered by <span className="font-semibold text-blue-600">CMRF AI Agent</span>
               </p>
               <p className="text-sm text-gray-500 mt-2">
-               Features: AI RAG System & 📝 TTS 🗣️ STT
+                Features: AI RAG System & 📝 TTS 🗣️ STT
               </p>
             </div>
           </div>
