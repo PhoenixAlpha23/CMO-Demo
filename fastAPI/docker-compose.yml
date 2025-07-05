@@ -17,10 +17,20 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_DB=0
-      # Add other env vars as needed, or mount your .env file
+      - GROQ_API_KEY=${GROQ_API_KEY}
     depends_on:
       - redis
     volumes:
-      - .:/app
       - ./uploads:/app/uploads
+    restart: unless-stopped
+
+  react:
+    build:
+      context: ./my-react-app      
+      dockerfile: Dockerfile.react
+    container_name: react-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - CHOKIDAR_USEPOLLING=true 
     restart: unless-stopped

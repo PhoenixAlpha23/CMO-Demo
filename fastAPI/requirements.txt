@@ -20,3 +20,6 @@ uvicorn
 # for speech-to-text
 openai-whisper
 ffmpeg-python
+#for backend
+redis
+python-multipart

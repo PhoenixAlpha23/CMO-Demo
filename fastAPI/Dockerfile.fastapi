@@ -6,8 +6,6 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --user --no-cache-dir -r requirements.txt
 
-COPY . .
-
 # --- Final stage ---
 FROM python:3.12.7-slim
 
@@ -15,8 +13,9 @@ WORKDIR /app
 
 # Copy installed packages from builder
 COPY --from=builder /root/.local /root/.local
-COPY . .
-
+COPY fastapp.py .
+COPY core ./core
+COPY utils ./utils
 ENV PATH=/root/.local/bin:$PATH
 
 CMD ["uvicorn", "fastapp:app", "--host", "0.0.0.0", "--port", "8000"]

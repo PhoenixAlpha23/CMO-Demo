@@ -1,4 +1,6 @@
-__pycache__/
+node_modules
+.git
+__pycache__
 *.pyc
 *.pyo
 *.pyd
@@ -7,8 +9,6 @@ __pycache__/
 *.log
 *.env
 .env.*
-.git
-.gitignore
 .vscode
 .DS_Store
 *.egg-info/
@@ -22,12 +22,6 @@ __pycache__/
 .tox/
 .mypy_cache/
 resources/
-test_redis.py
 assets/
-resources/
 .streamlit/
-# Ignore Docker-related files
-Dockerfile
-docker-compose.yml
-Dockerfile.fastapi
-Dockerfile.streamlit
+uploads/
