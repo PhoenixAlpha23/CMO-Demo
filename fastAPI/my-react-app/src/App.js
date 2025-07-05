@@ -20,6 +20,7 @@ function App() {
   const [langWarning, setLangWarning] = useState('');
   const [isRagBuilding, setIsRagBuilding] = useState(false);
   const [audioUrl, setAudioUrl] = useState(null); // Add this state at the top with other states
+  const [modelKey, setModelKey] = useState(null);
 
   useEffect(() => {
     checkApiAvailability();
@@ -60,8 +61,7 @@ function App() {
       setUploadedFiles({ pdf: pdfFile, txt: txtFile });
       setRagInitialized(true);
       setActiveTab('chat');
-      // After upload, call your backend to build RAG system
-      // await buildRagSystem(files); // your function
+      setModelKey(result.model_key || null); // <-- Save model_key here
       return { success: true, message: result.message };
     } catch (error) {
       return { success: false, message: error.message };
@@ -98,9 +98,8 @@ function App() {
     }
     setIsLoading(true);
     try {
-      // Start both requests in parallel
-      const textPromise = apiClient.query(inputText);
-      const ttsPromise = apiClient.generateTTS(inputText); // or use textPromise's reply if needed
+      const textPromise = apiClient.query(inputText, 'llama-3.3-70b-versatile', true, 'auto', modelKey); // <-- Pass modelKey here
+      const ttsPromise = apiClient.generateTTS(inputText);
       const [result, ttsResult] = await Promise.all([textPromise, ttsPromise]);
       setCurrentAnswer(result.reply);
       setCurrentQuestion(inputText);

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { Volume2, VolumeX, Copy, CheckCircle, Loader2, Pause, RotateCcw, Play, Download } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -28,15 +28,25 @@ const AnswerSection = ({ answer, question, onGenerateTTS, audioUrl, autoPlay }) 
   const [audioUrlState, setAudioUrl] = useState(null);
   const [audioProgress, setAudioProgress] = useState(0);
   const [audioDuration, setAudioDuration] = useState(0);
+  const [playbackRate, setPlaybackRate] = useState(1.0);
   const audioRef = useRef(null);
+  const playedOnce = useRef({});
 
   // Global audio playing flag
   const isAnyAudioPlaying = () => window.isAnyAudioPlaying;
   const setAnyAudioPlaying = (val) => { window.isAnyAudioPlaying = val; };
 
+  // Clean [Cached] text from answer (copy from ChatHistory)
+  function cleanAnswer(text) {
+    if (typeof text === 'string') {
+      return text.replace(/^\[Cached\]\s*/, '');
+    }
+    return text;
+  }
+
   const handleCopyAnswer = async () => {
     try {
-      await navigator.clipboard.writeText(answer);
+      await navigator.clipboard.writeText(cleanAnswer(answer));
       setIsCopied(true);
       setTimeout(() => setIsCopied(false), 2000);
     } catch (error) {
@@ -47,6 +57,10 @@ const AnswerSection = ({ answer, question, onGenerateTTS, audioUrl, autoPlay }) 
   // When audioUrl changes, create a new Audio object
   useEffect(() => {
     if (!audioUrlState) return;
+
+    // Use a unique key for the answer (could be answer text or a hash)
+    const answerKey = cleanAnswer(answer);
+
     // Pause any global audio before starting new one
     if (window.currentlyPlayingAudio && typeof window.currentlyPlayingAudio.pause === 'function') {
       window.currentlyPlayingAudio.pause();
@@ -56,6 +70,7 @@ const AnswerSection = ({ answer, question, onGenerateTTS, audioUrl, autoPlay }) 
       audioRef.current = null;
     }
     const audio = new Audio(audioUrlState);
+    audio.playbackRate = playbackRate; // Set initial playback rate
     audioRef.current = audio;
     window.currentlyPlayingAudio = audio;
 
@@ -67,32 +82,38 @@ const AnswerSection = ({ answer, question, onGenerateTTS, audioUrl, autoPlay }) 
     audio.addEventListener('pause', () => setIsPlayingTTS(false));
     audio.addEventListener('play', () => setIsPlayingTTS(true));
 
-    // Try to autoplay as soon as the audio is ready
-    const tryPlay = () => {
-      audio.load();
-      const playPromise = audio.play();
-      if (playPromise !== undefined) {
-        playPromise.catch(() => {
-          // Show a UI hint to the user and retry on interaction
-          if (!window.__audio_autoplay_hint_shown) {
-            alert('🔊 Please click anywhere on the page to enable audio playback (browser autoplay policy).');
-            window.__audio_autoplay_hint_shown = true;
-          }
-          const onUserInteract = () => {
-            audio.play();
-            window.removeEventListener('click', onUserInteract);
-            window.removeEventListener('keydown', onUserInteract);
-          };
-          window.addEventListener('click', onUserInteract);
-          window.addEventListener('keydown', onUserInteract);
-        });
+    // Autoplay only once per answer
+    if (!playedOnce.current[answerKey]) {
+      const tryPlay = () => {
+        audio.load();
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(() => {
+            // Show a UI hint to the user and retry on interaction
+            if (!window.__audio_autoplay_hint_shown) {
+              alert('🔊 Please click anywhere on the page to enable audio playback (browser autoplay policy).');
+              window.__audio_autoplay_hint_shown = true;
+            }
+            const onUserInteract = () => {
+              audio.play();
+              window.removeEventListener('click', onUserInteract);
+              window.removeEventListener('keydown', onUserInteract);
+            };
+            window.addEventListener('click', onUserInteract);
+            window.addEventListener('keydown', onUserInteract);
+          });
+        }
+        playedOnce.current[answerKey] = true; // Mark as played
+      };
+      if (audio.readyState >= 1) {
+        tryPlay();
+      } else {
+        audio.addEventListener('loadedmetadata', tryPlay, { once: true });
       }
-    };
-    if (audio.readyState >= 1) {
-      tryPlay();
-    } else {
-      audio.addEventListener('loadedmetadata', tryPlay, { once: true });
     }
+
+    // Update playback rate if changed
+    audio.playbackRate = playbackRate;
 
     return () => {
       audio.pause();
@@ -101,7 +122,7 @@ const AnswerSection = ({ answer, question, onGenerateTTS, audioUrl, autoPlay }) 
         window.currentlyPlayingAudio = null;
       }
     };
-  }, [audioUrlState]);
+  }, [audioUrlState, answer, playbackRate]); // <-- add playbackRate as dependency
 
   // Play/Pause handler
   const handlePlayPause = () => {
@@ -126,12 +147,23 @@ const AnswerSection = ({ answer, question, onGenerateTTS, audioUrl, autoPlay }) 
     if (isPlayingTTS) audio.play();
   };
 
-  // Generate TTS and set audioUrl
-  const handleGenerateTTS = async () => {
+  // Generate TTS and set audioUrl, then play immediately if autoPlay or user requested
+  const handleGenerateTTS = async (playAfter = false) => {
     setIsGeneratingTTS(true);
     try {
-      const lang = detectLang(answer);
-      const ttsResult = await onGenerateTTS(answer, lang);
+      // Always pause and clean up previous audio before generating new
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+      if (audioUrlState) {
+        URL.revokeObjectURL(audioUrlState);
+        setAudioUrl(null);
+      }
+
+      const cleanedAnswer = cleanAnswer(answer);
+      const lang = detectLang(cleanedAnswer);
+      const ttsResult = await onGenerateTTS(cleanedAnswer, lang);
       if (ttsResult && ttsResult.audio_base64) {
         const audioBlob = new Blob(
           [Uint8Array.from(atob(ttsResult.audio_base64), c => c.charCodeAt(0))],
@@ -139,9 +171,11 @@ const AnswerSection = ({ answer, question, onGenerateTTS, audioUrl, autoPlay }) 
         );
         const url = URL.createObjectURL(audioBlob);
         setAudioUrl(url);
-        setTimeout(() => {
-          if (audioRef.current) audioRef.current.play();
-        }, 100);
+        if (playAfter) {
+          setTimeout(() => {
+            if (audioRef.current) audioRef.current.play();
+          }, 100);
+        }
       }
     } catch (error) {
       console.error('TTS generation failed:', error);
@@ -168,7 +202,7 @@ const AnswerSection = ({ answer, question, onGenerateTTS, audioUrl, autoPlay }) 
   // Auto-generate and play TTS when answer changes and autoPlay is true
   useEffect(() => {
     if (autoPlay && answer && !audioUrlState && !isGeneratingTTS) {
-      handleGenerateTTS();
+      handleGenerateTTS(true); // Pass true to play after generating
     }
     // eslint-disable-next-line
   }, [answer, autoPlay]);
@@ -192,7 +226,7 @@ const AnswerSection = ({ answer, question, onGenerateTTS, audioUrl, autoPlay }) 
           <span className="block font-semibold text-green-700 mb-1">AI Assistant</span>
           <div className="prose prose-blue max-w-none">
             <div className="text-gray-700 leading-relaxed">
-              <div className="markdown-content" lang={detectLang(answer)}>
+              <div className="markdown-content" lang={detectLang(cleanAnswer(answer))}>
                 <ReactMarkdown 
                   remarkPlugins={[remarkGfm]}
                   components={{
@@ -209,7 +243,7 @@ const AnswerSection = ({ answer, question, onGenerateTTS, audioUrl, autoPlay }) 
                     blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-blue-500 pl-4 italic text-gray-600 my-6" {...props} />,
                   }}
                 >
-                  {answer}
+                  {cleanAnswer(answer)}
                 </ReactMarkdown>
               </div>
             </div>
@@ -218,7 +252,7 @@ const AnswerSection = ({ answer, question, onGenerateTTS, audioUrl, autoPlay }) 
           <div className="flex flex-col space-y-1 mt-2">
             <div className="flex items-center space-x-2">
               <button
-                onClick={audioUrlState ? handlePlayPause : handleGenerateTTS}
+                onClick={audioUrlState ? handlePlayPause : () => handleGenerateTTS(true)}
                 disabled={isGeneratingTTS}
                 className="p-2 rounded-lg bg-green-100 text-green-600 hover:bg-green-200 transition-colors disabled:opacity-50"
                 title={isPlayingTTS ? 'Pause Audio' : 'Play Audio'}
@@ -256,6 +290,20 @@ const AnswerSection = ({ answer, question, onGenerateTTS, audioUrl, autoPlay }) 
                   <Copy className="w-4 h-4" />
                 )}
               </button>
+              {/* Playback Speed Selector */}
+              <select
+                value={playbackRate}
+                onChange={e => setPlaybackRate(Number(e.target.value))}
+                className="p-1 rounded bg-gray-100 text-gray-700 text-xs border border-gray-200"
+                title="Playback Speed"
+                style={{ width: 70 }}
+              >
+                <option value={0.75}>0.75x</option>
+                <option value={1.0}>1x</option>
+                <option value={1.25}>1.25x</option>
+                <option value={1.5}>1.5x</option>
+                <option value={2.0}>2x</option>
+              </select>
             </div>
             {/* Audio Player Bar */}
             {audioUrlState && (

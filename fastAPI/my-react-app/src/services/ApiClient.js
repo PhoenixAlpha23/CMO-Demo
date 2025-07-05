@@ -42,13 +42,14 @@ class ApiClient {
     }
   }
 
-  async query(inputText, model = 'llama-3.3-70b-versatile', enhancedMode = true, voiceLangPref = 'auto') {
+  async query(inputText, model = 'llama-3.3-70b-versatile', enhancedMode = true, voiceLangPref = 'auto', modelKey = null) {
     try {
       const response = await this.client.post('/query/', {
         input_text: inputText,
         model,
         enhanced_mode: enhancedMode,
         voice_lang_pref: voiceLangPref,
+        model_key: modelKey, // Pass model_key if available
       });
       return response.data;
     } catch (error) {

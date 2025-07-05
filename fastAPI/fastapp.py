@@ -17,7 +17,7 @@ from groq import Groq
 import asyncio
 import ffmpeg
 from core.transcription import transcribe_audio_whisper, transcribe_audio_robust
-
+import logging
 # Core services
 from core.rag_services import build_rag_chain_with_model_choice, process_scheme_query_with_retry
 from core.tts_services import generate_audio_response, TTS_AVAILABLE
@@ -155,44 +155,114 @@ class RedisManager:
 redis_manager = RedisManager()
 
 # Enhanced STATE with Redis fallback
-class StateManager:
-    def __init__(self, redis_manager: RedisManager):
+class LangChainStateManager:
+    def __init__(self, redis_manager):
         self.redis = redis_manager
-        # In-memory fallback
-        self._memory_state = {
-            "rag_chain": None,
-            "current_model_key": "",
-            "chat_history": [],
-            "last_query_time": 0
+        self._rag_cache = {}
+        self._memory_fallback = {}
+
+    def store_rag_chain_config(self, model_key: str, 
+                              pdf_bytes: Optional[bytes] = None,
+                              txt_bytes: Optional[bytes] = None,
+                              model_choice: str = "llama-3.3-70b-versatile",
+                              enhanced_mode: bool = True,
+                              pdf_name: str = "None",
+                              txt_name: str = "None",
+                              rag_chain=None):
+        config = {
+            "model_choice": model_choice,
+            "enhanced_mode": enhanced_mode,
+            "pdf_name": pdf_name,
+            "txt_name": txt_name,
+            "timestamp": time.time(),
+            "pdf_content": base64.b64encode(pdf_bytes).decode() if pdf_bytes else None,
+            "txt_content": base64.b64encode(txt_bytes).decode() if txt_bytes else None,
+            "pdf_size": len(pdf_bytes) if pdf_bytes else 0,
+            "txt_size": len(txt_bytes) if txt_bytes else 0,
         }
-    
-    def get_rag_chain(self, model_key: str):
+        stored = False
         if self.redis.is_available():
-            return self.redis.get_rag_chain(model_key)
-        return self._memory_state.get("rag_chain") if self._memory_state.get("current_model_key") == model_key else None
-    
-    def set_rag_chain(self, model_key: str, rag_chain):
+            try:
+                config_json = json.dumps(config)
+                self.redis.redis_client.setex(
+                    f"rag_config:{model_key}", 
+                    24 * 3600,
+                    config_json
+                )
+                stored = True
+                logging.info(f"RAG config stored in Redis for key: {model_key}")
+            except Exception as e:
+                logging.error(f"Failed to store config in Redis: {e}")
+        if not stored:
+            self._memory_fallback[f"rag_config:{model_key}"] = config
+            logging.info(f"RAG config stored in memory for key: {model_key}")
+        if rag_chain:
+            self._rag_cache[model_key] = {
+                "chain": rag_chain,
+                "created_at": time.time()
+            }
+            logging.info(f"RAG chain cached in memory for key: {model_key}")
+        return True
+
+    def get_rag_chain(self, model_key: str, groq_api_key: str):
+        if model_key in self._rag_cache:
+            cached = self._rag_cache[model_key]
+            if time.time() - cached["created_at"] < 3600:
+                return cached["chain"]
+            else:
+                del self._rag_cache[model_key]
+        config = self._get_rag_config(model_key)
+        if not config:
+            return None
+        rag_chain = self._rebuild_rag_chain(config, groq_api_key)
+        if rag_chain:
+            self._rag_cache[model_key] = {
+                "chain": rag_chain,
+                "created_at": time.time()
+            }
+        return rag_chain
+
+    def _get_rag_config(self, model_key: str) -> Optional[dict]:
         if self.redis.is_available():
-            self.redis.set_rag_chain(model_key, rag_chain)
-        else:
-            self._memory_state["rag_chain"] = rag_chain
-            self._memory_state["current_model_key"] = model_key
-    
-    def get_chat_history(self, session_id: str = "default") -> List[dict]:
+            try:
+                data = self.redis.redis_client.get(f"rag_config:{model_key}")
+                if data:
+                    return json.loads(data.decode('utf-8'))
+            except Exception as e:
+                logging.error(f"Failed to get config from Redis: {e}")
+        return self._memory_fallback.get(f"rag_config:{model_key}")
+
+    def _rebuild_rag_chain(self, config: dict, groq_api_key: str):
+        try:
+            from core.rag_services import build_rag_chain_with_model_choice
+            pdf_bytes = base64.b64decode(config["pdf_content"]) if config.get("pdf_content") else None
+            txt_bytes = base64.b64decode(config["txt_content"]) if config.get("txt_content") else None
+            pdf_io = io.BytesIO(pdf_bytes) if pdf_bytes else None
+            txt_io = io.BytesIO(txt_bytes) if txt_bytes else None
+            rag_chain = build_rag_chain_with_model_choice(
+                pdf_io,
+                txt_io,
+                groq_api_key,
+                model_choice=config["model_choice"],
+                enhanced_mode=config["enhanced_mode"]
+            )
+            return rag_chain
+        except Exception as e:
+            logging.error(f"Failed to rebuild RAG chain: {e}")
+            return None
+
+    # Chat history methods (unchanged)
+    def get_chat_history(self, session_id: str = "default"):
         if self.redis.is_available():
             return self.redis.get_chat_history(session_id)
-        return self._memory_state.get("chat_history", [])
-    
+        return []
+
     def add_chat_message(self, message: dict, session_id: str = "default"):
         if self.redis.is_available():
             self.redis.add_chat_message(session_id, message)
-        else:
-            self._memory_state["chat_history"].insert(0, message)
-            # Keep only last 50 messages in memory
-            self._memory_state["chat_history"] = self._memory_state["chat_history"][:50]
 
 # Initialize state manager
-state_manager = StateManager(redis_manager)
+state_manager = LangChainStateManager(redis_manager)
 
 # Dependency functions
 def get_groq_client() -> Groq:
@@ -276,26 +346,25 @@ async def upload_files(
     session_id: str = Depends(get_session_id),
     groq_client: Groq = Depends(get_groq_client)
 ):
+    if not (pdf_file or txt_file):
+        return JSONResponse(status_code=400, content={"error": "Please upload at least one file (PDF or TXT)."})
+
+    pdf_name = pdf_file.filename if pdf_file else "None"
+    txt_name = txt_file.filename if txt_file else "None"
+    model_key = generate_model_key("llama-3.3-70b-versatile", True, pdf_name, txt_name)
+
+    existing_chain = state_manager.get_rag_chain(model_key, GROQ_API_KEY)
+    if existing_chain is not None:
+        return {
+            "message": "RAG system already initialized.", 
+            "model_key": model_key,
+            "source": "cache"
+        }
+
     try:
-        if not (pdf_file or txt_file):
-            return JSONResponse(status_code=400, content={"error": "Please upload at least one file (PDF or TXT)."})
-
-        pdf_name = pdf_file.filename if pdf_file and pdf_file.filename else ""
-        txt_name = txt_file.filename if txt_file and txt_file.filename else ""
-        
-        # Generate model key
-        model_key = generate_model_key("llama-3.3-70b-versatile", True, pdf_name, txt_name)
-
-        # Check if RAG chain already exists
-        existing_chain = state_manager.get_rag_chain(model_key)
-        if existing_chain is not None:
-            return {"message": "RAG system already initialized.", "model_key": model_key}
-
-        # Read files
         pdf_bytes = await pdf_file.read() if pdf_file else None
         txt_bytes = await txt_file.read() if txt_file else None
-
-        # Build RAG chain
+        from core.rag_services import build_rag_chain_with_model_choice
         rag_chain = build_rag_chain_with_model_choice(
             io.BytesIO(pdf_bytes) if pdf_bytes else None,
             io.BytesIO(txt_bytes) if txt_bytes else None,
@@ -303,65 +372,49 @@ async def upload_files(
             model_choice="llama-3.3-70b-versatile",
             enhanced_mode=True
         )
-        
-        # Store in Redis/memory
-        state_manager.set_rag_chain(model_key, rag_chain)
-        
+        state_manager.store_rag_chain_config(
+            model_key=model_key,
+            pdf_bytes=pdf_bytes,
+            txt_bytes=txt_bytes,
+            pdf_name=pdf_name,
+            txt_name=txt_name,
+            rag_chain=rag_chain
+        )
         return {
             "message": "RAG system initialized successfully.", 
             "model_key": model_key,
-            "redis_available": redis_manager.is_available()
+            "redis_available": redis_manager.is_available(),
+            "storage_method": "configuration_based",
+            "source": "fresh_build"
         }
-        
     except Exception as e:
+        import traceback
+        logging.error(traceback.format_exc())
         return JSONResponse(status_code=500, content={"error": f"Failed to build RAG system: {str(e)}"})
 
 @app.post("/query/")
 async def get_answer(req: QueryRequest):
+    input_text = req.input_text.strip()
+    if not input_text:
+        return JSONResponse(status_code=400, content={"error": "Empty query input."})
+
+    session_id = req.session_id or "default"
+    wait_time = improved_rate_limit_check(session_id)
+    if wait_time:
+        return JSONResponse(status_code=429, content={"message": f"Rate limited. Wait {wait_time:.1f} seconds."})
+
+    model_key = req.model_key
+    if not model_key:
+        return JSONResponse(status_code=400, content={"error": "model_key is required. Please upload files first."})
+
+    rag_chain = state_manager.get_rag_chain(model_key, GROQ_API_KEY)
+    if not rag_chain:
+        return JSONResponse(status_code=400, content={"error": "No RAG system found. Please upload files first."})
+
     try:
-        input_text = req.input_text.strip()
-        if not input_text:
-            return JSONResponse(status_code=400, content={"error": "Empty query input."})
-
-        session_id = req.session_id or "default"
-
-        # Enhanced rate limiting
-        wait_time = improved_rate_limit_check(session_id)
-        if wait_time:
-            return JSONResponse(status_code=429, content={"message": f"Rate limited. Wait {wait_time:.1f} seconds."})
-
-        # Use model_key if provided
-        rag_chain = None
-        if req.model_key:
-            rag_chain = state_manager.get_rag_chain(req.model_key)
-        else:
-            # Fallback: try to get any available chain (existing logic)
-            if redis_manager.is_available() and redis_manager.redis_client is not None:
-                try:
-                    keys = redis_manager.redis_client.keys("rag_chain:*")
-                    if hasattr(keys, '__await__'):
-                        keys = []
-                    if not hasattr(keys, '__getitem__') or not hasattr(keys, '__iter__'):
-                        keys = []
-                    if keys:
-                        key0 = keys[0]
-                        if hasattr(key0, 'decode'):
-                            key0 = key0.decode()
-                        rag_chain = redis_manager.get_rag_chain(key0.replace("rag_chain:", ""))
-                except Exception:
-                    pass
-
-            if not rag_chain:
-                # Fallback to memory state
-                rag_chain = state_manager._memory_state.get("rag_chain")
-
-        if not rag_chain:
-            return JSONResponse(status_code=400, content={"error": "No RAG system initialized. Please upload files first."})
-
+        from core.rag_services import process_scheme_query_with_retry
         result = process_scheme_query_with_retry(rag_chain, input_text)
         assistant_reply = result[0] if isinstance(result, tuple) else result or "No response received"
-
-        # Store chat message
         message = {
             "user": input_text,
             "assistant": assistant_reply,
@@ -369,14 +422,14 @@ async def get_answer(req: QueryRequest):
             "timestamp": time.strftime("%H:%M:%S")
         }
         state_manager.add_chat_message(message, session_id)
-
         return {
             "reply": assistant_reply,
             "session_id": session_id,
-            "redis_available": redis_manager.is_available()
+            "model_key": model_key
         }
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error": f"{str(e)}"})
+        logging.error(f"Query processing error: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 @app.get("/chat-history/")
 async def get_chat_history(session_id: str = Depends(get_session_id)):

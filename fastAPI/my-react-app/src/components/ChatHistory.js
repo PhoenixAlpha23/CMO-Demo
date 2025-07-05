@@ -27,6 +27,7 @@ const ChatHistory = ({ chatHistory, onGenerateTTS }) => {
   const [audioDuration, setAudioDuration] = useState({});
   const audioRefs = useRef({});
   const [audioUrls, setAudioUrls] = useState({});
+  const playedOnce = useRef({}); // Add this near your other refs
   // Add autoPlayBlocked ref for each message
   const autoPlayBlocked = useRef({});
 
@@ -34,9 +35,17 @@ const ChatHistory = ({ chatHistory, onGenerateTTS }) => {
   const isAnyAudioPlaying = () => window.isAnyAudioPlaying;
   const setAnyAudioPlaying = (val) => { window.isAnyAudioPlaying = val; };
 
+  // Clean [Cached] text from answer
+  const cleanAnswer = (text) => {
+    if (typeof text === 'string') {
+      return text.replace(/^\[Cached\]\s*/, '');
+    }
+    return text;
+  };
+
   const handleCopyMessage = async (text, index) => {
     try {
-      await navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(cleanAnswer(text));
       setCopiedIndex(index);
       setTimeout(() => setCopiedIndex(null), 2000);
     } catch (error) {
@@ -77,22 +86,7 @@ const ChatHistory = ({ chatHistory, onGenerateTTS }) => {
       audio.addEventListener('ended', () => setPlayingIndex(null));
       audio.addEventListener('pause', () => setPlayingIndex(null));
       audio.addEventListener('play', () => setPlayingIndex(idx));
-
-      // Try to autoplay as soon as the audio is ready
-      const tryPlay = () => {
-        audio.load(); // Ensure audio is loaded
-        const playPromise = audio.play();
-        if (playPromise !== undefined) {
-          playPromise.catch(() => {
-            // Optionally handle autoplay block here
-          });
-        }
-      };
-      if (audio.readyState >= 1) {
-        tryPlay();
-      } else {
-        audio.addEventListener('loadedmetadata', tryPlay, { once: true });
-      }
+      // Autoplay logic removed: audio will only play on user action
     });
     return () => {
       Object.values(audioRefs.current).forEach(audio => {
@@ -127,7 +121,8 @@ const ChatHistory = ({ chatHistory, onGenerateTTS }) => {
   // Generate TTS and set audioUrl for an index
   const handleGenerateTTS = async (text, idx) => {
     try {
-      const ttsResult = await onGenerateTTS(text);
+      const cleanedText = cleanAnswer(text);
+      const ttsResult = await onGenerateTTS(cleanedText);
       if (ttsResult && ttsResult.audio_base64) {
         const audioBlob = new Blob(
           [Uint8Array.from(atob(ttsResult.audio_base64), c => c.charCodeAt(0))],
@@ -227,7 +222,7 @@ const ChatHistory = ({ chatHistory, onGenerateTTS }) => {
               <div
                 className="text-gray-700 leading-relaxed"
               >
-                <div className="markdown-content" lang={detectLang(chat.assistant)}>
+                <div className="markdown-content" lang={detectLang(cleanAnswer(chat.assistant))}>
                   <ReactMarkdown 
                     remarkPlugins={[remarkGfm]}
                     components={{
@@ -244,7 +239,7 @@ const ChatHistory = ({ chatHistory, onGenerateTTS }) => {
                       blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-blue-500 pl-4 italic text-gray-600 my-6" {...props} />,
                     }}
                   >
-                    {chat.assistant}
+                    {cleanAnswer(chat.assistant)}
                   </ReactMarkdown>
                 </div>
               </div>
@@ -252,7 +247,7 @@ const ChatHistory = ({ chatHistory, onGenerateTTS }) => {
               <div className="flex flex-col space-y-1 mt-2">
                 <div className="flex items-center space-x-2">
                   <button
-                    onClick={() => audioUrls[`assistant-${index}`] ? handlePlayPause(`assistant-${index}`) : handleGenerateTTS(chat.assistant, `assistant-${index}`)}
+                    onClick={() => audioUrls[`assistant-${index}`] ? handlePlayPause(`assistant-${index}`) : handleGenerateTTS(cleanAnswer(chat.assistant), `assistant-${index}`)}
                     className="p-1 rounded hover:bg-green-200 transition-colors disabled:opacity-50"
                     title={playingIndex === `assistant-${index}` ? 'Pause Audio' : 'Play Audio'}
                   >
@@ -316,7 +311,7 @@ const ChatHistory = ({ chatHistory, onGenerateTTS }) => {
                         className="inline-flex items-center px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 text-xs font-medium transition-colors"
                         title="Download Audio as MP3"
                       >
-                        Download Audio
+                        <Download className="w-4 h-4" />
                       </a>
                     </div>
                   </>
