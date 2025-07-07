@@ -42,14 +42,13 @@ class ApiClient {
     }
   }
 
-  async query(inputText, model = 'llama-3.3-70b-versatile', enhancedMode = true, voiceLangPref = 'auto', modelKey = null) {
+  async query(inputText, modelKey, enhancedMode = true, voiceLangPref = 'auto') {
     try {
       const response = await this.client.post('/query/', {
         input_text: inputText,
-        model,
+        model_key: modelKey, // <-- Send model_key
         enhanced_mode: enhancedMode,
         voice_lang_pref: voiceLangPref,
-        model_key: modelKey, // Pass model_key if available
       });
       return response.data;
     } catch (error) {
@@ -73,25 +72,6 @@ class ApiClient {
     }
   }
 
-  async transcribeAudio(audioBlob) {
-    const formData = new FormData();
-    formData.append('audio', audioBlob, 'audio.wav');
-
-    try {
-      const response = await this.client.post('/transcribe', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
-      return response.data;
-    } catch (error) {
-      if (error.response?.data?.error) {
-        throw new Error(error.response.data.error);
-      }
-      throw new Error('Transcription failed');
-    }
-  }
-
   async generateTTS(text, langPreference = 'auto') {
     const formData = new FormData();
     formData.append('text', text);
@@ -109,6 +89,25 @@ class ApiClient {
         throw new Error(error.response.data.error);
       }
       throw new Error('TTS generation failed');
+    }
+  }
+
+  async transcribeAudio(audioBlob) {
+    const formData = new FormData();
+    formData.append('audio_file', audioBlob, 'audio.wav');
+
+    try {
+      const response = await this.client.post('/transcribe/', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      return response.data;
+    } catch (error) {
+      if (error.response?.data?.error) {
+        throw new Error(error.response.data.error);
+      }
+      throw new Error('Transcription failed');
     }
   }
 }
