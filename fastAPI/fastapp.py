@@ -384,7 +384,7 @@ async def get_answer_optimized(req: QueryRequest):
     # ---------------------------------------------------
 
     session_id = req.session_id or "default"
-    wait_time = improved_rate_limit_check(session_id)
+    wait_time = check_rate_limit_delay(session_id)
     if wait_time:
         return JSONResponse(status_code=429, content={"message": f"Rate limited. Wait {wait_time:.1f} seconds."})
 
